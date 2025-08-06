@@ -1,0 +1,17 @@
+1. 而家gen 圖時可能有d 節點有機會會係死link 要記錄該節點為死link 並顯示於 graph 內 
+
+2. Gen 圖時發現依然會有認左path 內的md9 做cell adress 要檢視機制
+
+3. gen 圖時 file A worksheet 1 reference linkage from file A worksheet 2 後者的 File legend 會用current file 字眼
+
+4. 要問清楚 xls 和xlsm 處理方法
+
+5. 如果formula = A1 + A1  會唔會重覆處理去讀取兩次 A1 並在圖上生成兩個 A1 節點
+
+6. explode 時要顯示msg 正在處理的情況 或者可以不停更新dependency tree 內的結果比user 知道 
+
+7. openpyxl 讀取過的worksheet 或file 的record 或data 可否重用 現在是不是每處理一格address 就直接再進行openpyxl 的讀取動作
+
+8. user 在tab 按過read only 或 go to reference 的history 可否以graph 重現
+
+9. 有時file 需要password 打開 可否給定數password 作嘗試 
