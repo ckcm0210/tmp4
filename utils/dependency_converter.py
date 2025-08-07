@@ -188,7 +188,7 @@ def _format_long_formula_with_alignment(formula, max_length=35):
     return '\n'.join(lines)
 
 def _format_value_display(value):
-    """格式化值的顯示"""
+    """格式化值的顯示，支援hash值自動換行和Error處理"""
     if value is None or value == 'N/A':
         return 'N/A'
     
@@ -202,8 +202,37 @@ def _format_value_display(value):
         pass
     
     str_value = str(value)
-    if len(str_value) > 20:
-        return f"{str_value[:17]}..."
+    
+    # === 修復問題2：處理Error值，嘗試提供更多信息 ===
+    if str_value == 'Error':
+        return 'Error (計算失敗)'
+    
+    # === 新增：檢查是否為hash值格式並自動換行 ===
+    # 檢查是否包含hash值模式 (如: "9Rx1C | Hash: abc123def456")
+    if 'Hash:' in str_value and '|' in str_value:
+        parts = str_value.split('|')
+        if len(parts) >= 2:
+            dimension_part = parts[0].strip()
+            hash_part = parts[1].strip()
+            
+            # 如果hash值很長，進行換行
+            if len(hash_part) > 20:
+                # 將hash值分成多行，每行最多16個字符
+                hash_value = hash_part.replace('Hash: ', '')
+                formatted_hash_lines = []
+                for i in range(0, len(hash_value), 16):
+                    formatted_hash_lines.append(hash_value[i:i+16])
+                
+                # 重新組合，第一行包含"Hash:"，後續行縮進對齊
+                result = dimension_part + '\n'
+                result += 'Hash: ' + formatted_hash_lines[0]
+                for line in formatted_hash_lines[1:]:
+                    result += '\n      ' + line  # 6個空格對齊"Hash: "
+                return result
+    
+    # 一般值的處理
+    if len(str_value) > 25:
+        return f"{str_value[:22]}..."
     
     return str_value
 
@@ -283,11 +312,21 @@ def convert_tree_to_graph_data(dependency_tree_data):
     
     def collect_filenames(node):
         address = node.get('address', '')
+        workbook_path = node.get('workbook_path', '')
+        
         if '[' in address and ']' in address:
+            # 外部引用
             match = re.search(r'\[([^\]]+)\]', address)
             if match:
                 all_filenames.add(match.group(1))
+        elif workbook_path:
+            # 本地引用：從workbook_path提取檔案名
+            filename = os.path.basename(workbook_path)
+            if filename.endswith(('.xlsx', '.xls', '.xlsm', '.xlsb')):
+                filename = os.path.splitext(filename)[0] + '.xlsx'
+            all_filenames.add(filename)
         else:
+            # 備用
             all_filenames.add('Current File')
         
         for child in node.get('children', []):
@@ -312,12 +351,29 @@ def convert_tree_to_graph_data(dependency_tree_data):
             node_type = node.get('type', 'unknown')
             has_indirect = node.get('has_indirect', False)  # === 新增：是否有INDIRECT ===
             
-            # 確定檔案名和顏色
+            # === 修復：正確確定檔案名和顏色 + 清理URL編碼 ===
+            # 從workbook_path或address中提取真實檔案名
             filename = 'Current File'
-            if '[' in address and ']' in address:
-                match = re.search(r'\[([^\]]+)\]', address)
+            workbook_path = node.get('workbook_path', '')
+            
+            # === 新增：清理address中的URL編碼 ===
+            import urllib.parse
+            clean_address = urllib.parse.unquote(address) if address else address
+            
+            if '[' in clean_address and ']' in clean_address:
+                # 外部引用：從address中提取檔案名
+                match = re.search(r'\[([^\]]+)\]', clean_address)
                 if match:
-                    filename = match.group(1)
+                    filename = urllib.parse.unquote(match.group(1))
+            elif workbook_path:
+                # 本地引用：從workbook_path中提取檔案名
+                filename = os.path.basename(urllib.parse.unquote(workbook_path))
+                # 移除副檔名以保持一致性
+                if filename.endswith(('.xlsx', '.xls', '.xlsm', '.xlsb')):
+                    filename = os.path.splitext(filename)[0] + '.xlsx'
+            else:
+                # 備用：保持Current File
+                filename = 'Current File'
             
             color = file_colors.get(filename, "#808080")  # 灰色作為後備
             

@@ -274,31 +274,58 @@ class GraphGenerator:
                 ctx.save();
                 ctx.scale(this.scale, this.scale);
                 ctx.translate(this.viewOffset.x, this.viewOffset.y);
+                
+                // 繪製邊
                 var edges = this.edges.get();
                 edges.forEach(edge => {
                     var fromPos = this.nodePositions[edge.from];
                     var toPos = this.nodePositions[edge.to];
                     if (fromPos && toPos) {
+                        var edgeId = edge.from + '-' + edge.to;
+                        var isHighlighted = this.highlightedEdges && this.highlightedEdges.has(edgeId);
+                        
+                        // === 新增：高亮邊的發光效果 ===
+                        if (isHighlighted) {
+                            // 先繪製發光效果
+                            ctx.shadowColor = '#FFD700'; // 金色光暈
+                            ctx.shadowBlur = 8;
+                            ctx.shadowOffsetX = 0;
+                            ctx.shadowOffsetY = 0;
+                            ctx.strokeStyle = '#000000'; // 黑色
+                            ctx.lineWidth = 4; // 粗線
+                        } else {
+                            ctx.shadowColor = 'transparent';
+                            ctx.shadowBlur = 0;
+                            ctx.strokeStyle = '#848484'; // 原始顏色
+                            ctx.lineWidth = 1; // 原始寬度
+                        }
+                        
                         ctx.beginPath();
                         ctx.moveTo(fromPos.x, fromPos.y);
                         ctx.lineTo(toPos.x, toPos.y);
-                        ctx.strokeStyle = '#848484';
-                        ctx.lineWidth = 1;
                         ctx.stroke();
-                        this.drawArrow(ctx, fromPos.x, fromPos.y, toPos.x, toPos.y, edge.from, edge.to);
+                        
+                        // 清除陰影效果（避免影響箭頭）
+                        ctx.shadowColor = 'transparent';
+                        ctx.shadowBlur = 0;
+                        
+                        this.drawArrow(ctx, fromPos.x, fromPos.y, toPos.x, toPos.y, edge.from, edge.to, isHighlighted);
                     }
                 });
+                
+                // 繪製節點
                 var nodes = this.nodes.get();
                 nodes.forEach(node => {
                     var pos = this.nodePositions[node.id];
                     if (pos) {
-                        this.drawNode(ctx, node, pos.x, pos.y);
+                        var isHighlighted = this.highlightedNodes && this.highlightedNodes.has(node.id);
+                        this.drawNode(ctx, node, pos.x, pos.y, isHighlighted);
                     }
                 });
                 ctx.restore();
             };
             
-            Network.prototype.drawNode = function(ctx, node, x, y) {
+            Network.prototype.drawNode = function(ctx, node, x, y, isHighlighted) {
                 var nodeSize = this.nodeSizes[node.id];
                 if (!nodeSize) {
                     this.calculateNodeSize(node);
@@ -308,11 +335,40 @@ class GraphGenerator:
                 var width = nodeSize.width;
                 var height = nodeSize.height;
                 
-                ctx.fillStyle = node.color || '#97C2FC';
+                // === 新增：高亮節點的"著燈"效果 ===
+                if (isHighlighted) {
+                    // 先繪製發光效果（外圍光暈）
+                    ctx.shadowColor = '#FFD700'; // 金色光暈
+                    ctx.shadowBlur = 15;
+                    ctx.shadowOffsetX = 0;
+                    ctx.shadowOffsetY = 0;
+                    
+                    // 使用更亮的顏色作為高亮背景
+                    var originalColor = node.color || '#97C2FC';
+                    var brightColor = this.brightenColor(originalColor, 0.4); // 增亮40%
+                    ctx.fillStyle = brightColor;
+                } else {
+                    // 清除陰影效果
+                    ctx.shadowColor = 'transparent';
+                    ctx.shadowBlur = 0;
+                    ctx.fillStyle = node.color || '#97C2FC';
+                }
+                
+                // 繪製節點背景
                 ctx.fillRect(x - width/2, y - height/2, width, height);
                 
-                ctx.strokeStyle = '#2B7CE9';
-                ctx.lineWidth = 1;
+                // 清除陰影效果（避免影響邊框）
+                ctx.shadowColor = 'transparent';
+                ctx.shadowBlur = 0;
+                
+                // === 高亮節點的邊框樣式 ===
+                if (isHighlighted) {
+                    ctx.strokeStyle = '#000000'; // 黑色邊框
+                    ctx.lineWidth = 4; // 粗邊框
+                } else {
+                    ctx.strokeStyle = '#2B7CE9'; // 原始邊框顏色
+                    ctx.lineWidth = 1; // 原始邊框寬度
+                }
                 ctx.strokeRect(x - width/2, y - height/2, width, height);
                 
                 ctx.fillStyle = 'black';
@@ -379,7 +435,7 @@ class GraphGenerator:
                 });
             };
             
-            Network.prototype.drawArrow = function(ctx, fromX, fromY, toX, toY, fromNodeId, toNodeId) {
+            Network.prototype.drawArrow = function(ctx, fromX, fromY, toX, toY, fromNodeId, toNodeId, isHighlighted) {
                 var angle = Math.atan2(toY - fromY, toX - fromX);
                 var length = 10;
                 
@@ -409,13 +465,29 @@ class GraphGenerator:
                 ctx.moveTo(arrowX, arrowY);
                 ctx.lineTo(arrowX - length * Math.cos(angle + Math.PI / 6), 
                           arrowY - length * Math.sin(angle + Math.PI / 6));
-                ctx.strokeStyle = '#848484';
-                ctx.lineWidth = 1;
+                
+                // === 新增：高亮箭頭的樣式 ===
+                if (isHighlighted) {
+                    ctx.strokeStyle = '#000000'; // 黑色箭頭
+                    ctx.lineWidth = 4; // 粗箭頭
+                } else {
+                    ctx.strokeStyle = '#848484'; // 原始箭頭顏色
+                    ctx.lineWidth = 1; // 原始箭頭寬度
+                }
                 ctx.stroke();
             };
             
             Network.prototype.setupEvents = function() {
                 var self = this;
+                
+                // === 新增：高亮功能相關變量 ===
+                this.currentHighlightedNode = null;
+                this.originalNodeStyles = new Map();
+                this.originalEdgeStyles = new Map();
+                this.isClickForHighlight = false;
+                
+                // 保存原始樣式
+                this.saveOriginalStyles();
                 
                 this.canvas.addEventListener('mousedown', function(e) {
                     var rect = self.canvas.getBoundingClientRect();
@@ -426,6 +498,7 @@ class GraphGenerator:
                     
                     var nodes = self.nodes.get();
                     var nodeClicked = false;
+                    var clickedNodeId = null;
                     
                     for (var i = 0; i < nodes.length; i++) {
                         var node = nodes[i];
@@ -437,19 +510,38 @@ class GraphGenerator:
                         if (pos && 
                             mouseX >= pos.x - nodeSize.width/2 && mouseX <= pos.x + nodeSize.width/2 &&
                             mouseY >= pos.y - nodeSize.height/2 && mouseY <= pos.y + nodeSize.height/2) {
-                            self.isDragging = true;
+                            
+                            clickedNodeId = node.id;
+                            nodeClicked = true;
+                            
+                            // === 修復：同時支持拖拽和高亮 ===
+                            // 先設置拖拽準備狀態
                             self.dragNode = node.id;
                             self.dragOffset = {
                                 x: mouseX - pos.x,
                                 y: mouseY - pos.y
                             };
-                            self.canvas.style.cursor = 'grabbing';
-                            nodeClicked = true;
+                            
+                            // 如果是左鍵單擊，準備高亮檢測
+                            if (e.button === 0 && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+                                self.isClickForHighlight = true;
+                                // 延遲處理高亮，如果沒有拖拽才執行高亮
+                                setTimeout(function() {
+                                    if (self.isClickForHighlight && !self.isDragging) {
+                                        self.handleNodeHighlight(clickedNodeId);
+                                    }
+                                }, 150);
+                            }
                             break;
                         }
                     }
                     
                     if (!nodeClicked) {
+                        // === 新增：點擊空白區域清除高亮 ===
+                        if (e.button === 0) {
+                            self.clearHighlight();
+                            self.currentHighlightedNode = null;
+                        }
                         self.isDraggingView = true;
                         self.canvas.style.cursor = 'grabbing';
                     }
@@ -459,6 +551,19 @@ class GraphGenerator:
                     var rect = self.canvas.getBoundingClientRect();
                     var mouseX = (e.clientX - rect.left) / self.scale - self.viewOffset.x;
                     var mouseY = (e.clientY - rect.top) / self.scale - self.viewOffset.y;
+                    
+                    // === 修復：優先處理拖拽，取消高亮點擊 ===
+                    if (self.dragNode && !self.isDragging) {
+                        var moveDistance = Math.sqrt(
+                            Math.pow(e.clientX - rect.left - self.lastMousePos.x, 2) + 
+                            Math.pow(e.clientY - rect.top - self.lastMousePos.y, 2)
+                        );
+                        if (moveDistance > 3) { // 移動超過3像素立即進入拖拽模式
+                            self.isDragging = true;
+                            self.isClickForHighlight = false; // 取消高亮
+                            self.canvas.style.cursor = 'grabbing';
+                        }
+                    }
                     
                     if (self.isDragging && self.dragNode) {
                         self.nodePositions[self.dragNode] = {
@@ -480,6 +585,11 @@ class GraphGenerator:
                 });
                 
                 this.canvas.addEventListener('mouseup', function(e) {
+                    // === 新增：重置高亮點擊標記 ===
+                    setTimeout(function() {
+                        self.isClickForHighlight = false;
+                    }, 200);
+                    
                     self.isDragging = false;
                     self.isDraggingView = false;
                     self.dragNode = null;
@@ -513,6 +623,134 @@ class GraphGenerator:
                         self.draw();
                     }
                 });
+            };
+            
+            // === 新增：高亮功能方法 ===
+            Network.prototype.saveOriginalStyles = function() {
+                var nodes = this.nodes.get();
+                var edges = this.edges.get();
+                
+                // 保存節點原始樣式
+                for (var i = 0; i < nodes.length; i++) {
+                    var node = nodes[i];
+                    this.originalNodeStyles.set(node.id, {
+                        color: node.color || '#97C2FC',
+                        borderWidth: 1,
+                        borderColor: '#2B7CE9'
+                    });
+                }
+                
+                // 保存邊的原始樣式
+                for (var i = 0; i < edges.length; i++) {
+                    var edge = edges[i];
+                    var edgeId = edge.from + '-' + edge.to;
+                    this.originalEdgeStyles.set(edgeId, {
+                        color: '#848484',
+                        width: 1
+                    });
+                }
+                
+                console.log('Saved original styles for', nodes.length, 'nodes and', edges.length, 'edges');
+            };
+            
+            Network.prototype.handleNodeHighlight = function(nodeId) {
+                // 如果點擊的是已經高亮的節點，則取消高亮
+                if (this.currentHighlightedNode === nodeId) {
+                    this.clearHighlight();
+                    this.currentHighlightedNode = null;
+                    console.log('Cleared highlight for node:', nodeId);
+                } else {
+                    // 先清除之前的高亮
+                    this.clearHighlight();
+                    
+                    // 高亮新選中的節點及其相關節點
+                    this.highlightNodeAndRelated(nodeId);
+                    this.currentHighlightedNode = nodeId;
+                    console.log('Highlighted node and related:', nodeId);
+                }
+            };
+            
+            Network.prototype.highlightNodeAndRelated = function(nodeId) {
+                var allEdges = this.edges.get();
+                var relatedEdges = [];
+                var relatedNodeIds = new Set();
+                
+                // 添加被點擊的節點
+                relatedNodeIds.add(nodeId);
+                
+                // 找到與該節點相關的所有邊
+                for (var i = 0; i < allEdges.length; i++) {
+                    var edge = allEdges[i];
+                    if (edge.from === nodeId || edge.to === nodeId) {
+                        relatedEdges.push(edge);
+                        
+                        // 添加相關節點
+                        if (edge.from === nodeId) {
+                            relatedNodeIds.add(edge.to); // 下一層節點
+                        }
+                        if (edge.to === nodeId) {
+                            relatedNodeIds.add(edge.from); // 上一層節點
+                        }
+                    }
+                }
+                
+                console.log('Related nodes:', Array.from(relatedNodeIds));
+                console.log('Related edges:', relatedEdges.length);
+                
+                // 高亮相關節點
+                this.highlightNodes(Array.from(relatedNodeIds));
+                
+                // 高亮相關連線
+                this.highlightEdges(relatedEdges);
+                
+                // 重新繪製
+                this.draw();
+            };
+            
+            Network.prototype.highlightNodes = function(nodeIds) {
+                // 這裡我們直接修改節點的繪製樣式，而不是更新DataSet
+                // 因為我們使用的是自定義的canvas繪製
+                this.highlightedNodes = new Set(nodeIds);
+                console.log('Highlighted nodes:', nodeIds);
+            };
+            
+            Network.prototype.highlightEdges = function(edgesToHighlight) {
+                // 保存需要高亮的邊
+                this.highlightedEdges = new Set();
+                for (var i = 0; i < edgesToHighlight.length; i++) {
+                    var edge = edgesToHighlight[i];
+                    var edgeId = edge.from + '-' + edge.to;
+                    this.highlightedEdges.add(edgeId);
+                }
+                console.log('Highlighted edges:', edgesToHighlight.length);
+            };
+            
+            Network.prototype.clearHighlight = function() {
+                this.highlightedNodes = new Set();
+                this.highlightedEdges = new Set();
+                this.draw();
+                console.log('Cleared all highlights');
+            };
+            
+            // === 新增：顏色增亮函數 ===
+            Network.prototype.brightenColor = function(color, factor) {
+                // 將十六進制顏色轉換為RGB並增亮
+                var hex = color.replace('#', '');
+                var r = parseInt(hex.substr(0, 2), 16);
+                var g = parseInt(hex.substr(2, 2), 16);
+                var b = parseInt(hex.substr(4, 2), 16);
+                
+                // 增亮計算：向255靠近
+                r = Math.min(255, Math.floor(r + (255 - r) * factor));
+                g = Math.min(255, Math.floor(g + (255 - g) * factor));
+                b = Math.min(255, Math.floor(b + (255 - b) * factor));
+                
+                // 轉換回十六進制
+                var rHex = r.toString(16).padStart(2, '0');
+                var gHex = g.toString(16).padStart(2, '0');
+                var bHex = b.toString(16).padStart(2, '0');
+                
+                return '#' + rHex + gHex + bHex;
             };
             
             return {

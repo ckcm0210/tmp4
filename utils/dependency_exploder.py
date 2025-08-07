@@ -130,14 +130,16 @@ class DependencyExploder:
                 # 匹配 ''...'' 模式並替換為 '...'
                 fixed_formula = re.sub(r"''([^']*?)''", r"'\1'", fixed_formula)
 
-            # 決定顯示格式：外部引用顯示為 [filename]sheet!cell，本地引用顯示為 sheet!cell
+            # === 修復：所有節點都顯示完整檔案信息 ===
+            # 提取檔案名
+            filename = os.path.basename(workbook_path)
+            dir_path = os.path.dirname(workbook_path)
+            
             # 使用 root_workbook_path 來判斷是否為外部引用
             current_workbook_path = root_workbook_path if root_workbook_path else workbook_path
-            # --- FIX: 強制根節點也顯示檔案名 ---
-            if os.path.normpath(current_workbook_path) != os.path.normpath(workbook_path) or current_depth == 0:
-                # 外部引用或根節點：準備 short 和 full 兩種格式
-                filename = os.path.basename(workbook_path)
-                dir_path = os.path.dirname(workbook_path)
+            
+            if os.path.normpath(current_workbook_path) != os.path.normpath(workbook_path):
+                # 外部引用：準備 short 和 full 兩種格式
                 # Short format: [filename.xlsx]sheet!cell
                 short_display_address = f"[{filename}]{sheet_name}!{cell_address}"
                 # Full format: 'C:\path\[filename.xlsx]sheet'!cell
@@ -145,10 +147,13 @@ class DependencyExploder:
                 # 預設使用 short format
                 display_address = short_display_address
             else:
-                # 本地引用：顯示 sheet!cell 格式 (short 和 full 相同)
-                display_address = f"{sheet_name}!{cell_address}"
-                short_display_address = display_address
-                full_display_address = display_address
+                # === 修復：本地引用也顯示檔案名 ===
+                # Short format: [filename.xlsx]sheet!cell (與外部引用格式一致)
+                short_display_address = f"[{filename}]{sheet_name}!{cell_address}"
+                # Full format: 'C:\path\[filename.xlsx]sheet'!cell
+                full_display_address = f"'{dir_path}\\[{filename}]{sheet_name}'!{cell_address}"
+                # 預設使用 short format
+                display_address = short_display_address
 
             node = {
                 'address': display_address,
@@ -262,8 +267,9 @@ class DependencyExploder:
         def add_processed_span(start, end):
             processed_spans.append((start, end))
 
-        # Use the proven patterns from link_analyzer.py
+        # === 修復：改進模式匹配順序和邏輯，防止外部引用被錯誤解析 ===
         patterns = [
+            # 1. 外部引用 - 最高優先級，必須先匹配
             (
                 'external',
                 re.compile(
@@ -271,6 +277,7 @@ class DependencyExploder:
                     re.IGNORECASE
                 )
             ),
+            # 2. 本地引用（帶引號）
             (
                 'local_quoted',
                 re.compile(
@@ -278,6 +285,7 @@ class DependencyExploder:
                     re.IGNORECASE
                 )
             ),
+            # 3. 本地引用（不帶引號）
             (
                 'local_unquoted',
                 re.compile(
@@ -285,17 +293,19 @@ class DependencyExploder:
                     re.IGNORECASE
                 )
             ),
+            # 4. 當前工作表範圍 - 修改負向前瞻，排除外部引用
             (
                 'current_range',
                 re.compile(
-                    r"(?<![!'\[\]a-zA-Z0-9_\u4e00-\u9fa5])(\$?[A-Z]{1,3}\$?\d{1,7}:\s*\$?[A-Z]{1,3}\$?\d{1,7})(?![a-zA-Z0-9_])",
+                    r"(?<![!'\[\]a-zA-Z0-9_\u4e00-\u9fa5])(?!\[)(\$?[A-Z]{1,3}\$?\d{1,7}:\s*\$?[A-Z]{1,3}\$?\d{1,7})(?![a-zA-Z0-9_\]])",
                     re.IGNORECASE
                 )
             ),
+            # 5. 當前工作表單個儲存格 - 修改負向前瞻，排除外部引用
             (
                 'current_single',
                 re.compile(
-                    r"(?<![!'\[\]a-zA-Z0-9_\u4e00-\u9fa5])(\$?[A-Z]{1,3}\$?\d{1,7})(?![a-zA-Z0-9_:])",
+                    r"(?<![!'\[\]a-zA-Z0-9_\u4e00-\u9fa5])(?!\[)(\$?[A-Z]{1,3}\$?\d{1,7})(?![a-zA-Z0-9_:\]])",
                     re.IGNORECASE
                 )
             )
@@ -306,8 +316,10 @@ class DependencyExploder:
             for match in pattern.finditer(normalized_formula):
                 all_matches.append({'type': p_type, 'match': match, 'span': match.span()})
 
-        # Sort matches by position and length
-        all_matches.sort(key=lambda x: (x['span'][0], x['span'][1] - x['span'][0]))
+        # === 修復：按優先級和位置排序，外部引用優先 ===
+        # 先按類型優先級排序，再按位置排序
+        type_priority = {'external': 0, 'local_quoted': 1, 'local_unquoted': 2, 'current_range': 3, 'current_single': 4}
+        all_matches.sort(key=lambda x: (type_priority.get(x['type'], 99), x['span'][0], x['span'][1] - x['span'][0]))
 
         for item in all_matches:
             match = item['match']

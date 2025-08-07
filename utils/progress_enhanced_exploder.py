@@ -245,18 +245,24 @@ class EnhancedDependencyExploder:
     
     def _create_node(self, workbook_path, sheet_name, cell_address, current_depth, root_workbook_path, cell_info, fixed_formula, resolved_formula=None, indirect_info=None):
         """創建標準節點 - 支持INDIRECT信息"""
-        # 決定顯示格式
+        # === 修復：所有節點都顯示完整檔案信息 ===
+        # 提取檔案名
+        filename = os.path.basename(workbook_path)
+        dir_path = os.path.dirname(workbook_path)
+        
+        # 使用 root_workbook_path 來判斷是否為外部引用
         current_workbook_path = root_workbook_path if root_workbook_path else workbook_path
-        if os.path.normpath(current_workbook_path) != os.path.normpath(workbook_path) or current_depth == 0:
-            filename = os.path.basename(workbook_path)
-            dir_path = os.path.dirname(workbook_path)
+        
+        if os.path.normpath(current_workbook_path) != os.path.normpath(workbook_path):
+            # 外部引用
             short_display_address = f"[{filename}]{sheet_name}!{cell_address}"
             full_display_address = f"'{dir_path}\\[{filename}]{sheet_name}'!{cell_address}"
             display_address = short_display_address
         else:
-            display_address = f"{sheet_name}!{cell_address}"
-            short_display_address = display_address
-            full_display_address = display_address
+            # === 修復：本地引用也顯示檔案名 ===
+            short_display_address = f"[{filename}]{sheet_name}!{cell_address}"
+            full_display_address = f"'{dir_path}\\[{filename}]{sheet_name}'!{cell_address}"
+            display_address = short_display_address
 
         # 基本節點信息
         node = {
