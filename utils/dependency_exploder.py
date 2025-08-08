@@ -246,162 +246,161 @@ class DependencyExploder:
     
     def parse_formula_references(self, formula, current_workbook_path, current_sheet_name):
         """
-        Enhanced formula reference parser using proven patterns from link_analyzer.py
-        Supports ranges with intelligent expansion/summary based on size
+        使用修復後的公式引用解析器（基於dependency_exploder_old.py的proven方法）
+        同時支援範圍引用的智能處理
         """
         if not formula or not formula.startswith('='):
             return []
 
         references = []
-        processed_spans = []
-        
-        # Normalize backslashes to handle cases with single or double backslashes
+        processed_spans = set()
+
+        # 正規化反斜線處理
         normalized_formula = formula.replace('\\\\', '\\')
+
+        # 正則表達式匹配絕對引用（本地和外部）
+        # 修復：使用proven pattern from dependency_exploder_old.py
+        abs_pattern = r"((?:''[^']*''|'[^']+'|[^'!,=+\-*/^&()<> ]+)!)\$?([A-Z]{1,3})\$?([0-9]{1,7})"
         
-        def is_span_processed(start, end):
-            for p_start, p_end in processed_spans:
-                if start < p_end and end > p_start:
-                    return True
-            return False
+        for match in re.finditer(abs_pattern, normalized_formula):
+            sheet_part_raw = match.group(1)  # e.g., "'C:\\path\\[file.xlsx]Sheet1'!" or "Sheet1!"
+            col = match.group(2)
+            row = match.group(3)
+            cell_address = f"{col}{row}"
+            
+            # 標記此部分字符串為已處理
+            processed_spans.add(match.span())
 
-        def add_processed_span(start, end):
-            processed_spans.append((start, end))
-
-        # === 修復：改進模式匹配順序和邏輯，防止外部引用被錯誤解析 ===
-        patterns = [
-            # 1. 外部引用 - 最高優先級，必須先匹配
-            (
-                'external',
-                re.compile(
-                    r"'?((?:[a-zA-Z]:\\)?[^']*)\[([^\]]+\.(?:xlsx|xls|xlsm|xlsb))\]([^']*)'?\s*!\s*(\$?[A-Z]{1,3}\$?\d{1,7}(?::\$?[A-Z]{1,3}\$?\d{1,7})?)",
-                    re.IGNORECASE
-                )
-            ),
-            # 2. 本地引用（帶引號）
-            (
-                'local_quoted',
-                re.compile(
-                    r"'([^']+)'!(\$?[A-Z]{1,3}\$?\d{1,7}(?::\$?[A-Z]{1,3}\$?\d{1,7})?)",
-                    re.IGNORECASE
-                )
-            ),
-            # 3. 本地引用（不帶引號）
-            (
-                'local_unquoted',
-                re.compile(
-                    r"([a-zA-Z0-9_\u4e00-\u9fa5][a-zA-Z0-9_\s\.\u4e00-\u9fa5]{0,30})!(\$?[A-Z]{1,3}\$?\d{1,7}(?::\$?[A-Z]{1,3}\$?\d{1,7})?)",
-                    re.IGNORECASE
-                )
-            ),
-            # 4. 當前工作表範圍 - 修改負向前瞻，排除外部引用
-            (
-                'current_range',
-                re.compile(
-                    r"(?<![!'\[\]a-zA-Z0-9_\u4e00-\u9fa5])(?!\[)(\$?[A-Z]{1,3}\$?\d{1,7}:\s*\$?[A-Z]{1,3}\$?\d{1,7})(?![a-zA-Z0-9_\]])",
-                    re.IGNORECASE
-                )
-            ),
-            # 5. 當前工作表單個儲存格 - 修改負向前瞻，排除外部引用
-            (
-                'current_single',
-                re.compile(
-                    r"(?<![!'\[\]a-zA-Z0-9_\u4e00-\u9fa5])(?!\[)(\$?[A-Z]{1,3}\$?\d{1,7})(?![a-zA-Z0-9_:\]])",
-                    re.IGNORECASE
-                )
-            )
-        ]
-
-        all_matches = []
-        for p_type, pattern in patterns:
-            for match in pattern.finditer(normalized_formula):
-                all_matches.append({'type': p_type, 'match': match, 'span': match.span()})
-
-        # === 修復：按優先級和位置排序，外部引用優先 ===
-        # 先按類型優先級排序，再按位置排序
-        type_priority = {'external': 0, 'local_quoted': 1, 'local_unquoted': 2, 'current_range': 3, 'current_single': 4}
-        all_matches.sort(key=lambda x: (type_priority.get(x['type'], 99), x['span'][0], x['span'][1] - x['span'][0]))
-
-        for item in all_matches:
-            match = item['match']
-            m_type = item['type']
-            start, end = item['span']
-
-            if is_span_processed(start, end):
-                continue
-
-            try:
-                if m_type == 'external':
-                    dir_path, file_name, sheet_name, cell_ref = match.groups()
-                    sheet_name = sheet_name.strip("'")
-                    
-                    full_file_path = os.path.join(dir_path, file_name)
-                    if not dir_path and file_name.lower() == os.path.basename(current_workbook_path).lower():
-                        full_file_path = current_workbook_path
-                    
-                    # Handle ranges vs single cells
-                    if ':' in cell_ref:
-                        # Range reference - check if should expand
-                        range_refs = self._process_range_reference(
-                            cell_ref, full_file_path, sheet_name, 'external'
-                        )
-                        references.extend(range_refs)
-                    else:
-                        # Single cell reference
-                        references.append({
-                            'workbook_path': full_file_path,
-                            'sheet_name': sheet_name,
-                            'cell_address': cell_ref.replace('$', ''),
-                            'type': 'external'
-                        })
-
-                elif m_type in ('local_quoted', 'local_unquoted'):
-                    sheet_name, cell_ref = match.groups()
-                    sheet_name = sheet_name.strip("'")
-                    
-                    # Skip if it looks like a file name
-                    if sheet_name.lower().endswith(('.xlsx', '.xls', '.xlsm', '.xlsb')):
-                        continue
-                    
-                    # Handle ranges vs single cells
-                    if ':' in cell_ref:
-                        # Range reference - check if should expand
-                        range_refs = self._process_range_reference(
-                            cell_ref, current_workbook_path, sheet_name, 'local'
-                        )
-                        references.extend(range_refs)
-                    else:
-                        # Single cell reference
-                        references.append({
-                            'workbook_path': current_workbook_path,
-                            'sheet_name': sheet_name,
-                            'cell_address': cell_ref.replace('$', ''),
-                            'type': 'local'
-                        })
-
-                elif m_type in ('current_range', 'current_single'):
-                    cell_ref = match.group(1)
-                    
-                    # Handle ranges vs single cells
-                    if ':' in cell_ref:
-                        # Range reference - check if should expand
-                        range_refs = self._process_range_reference(
-                            cell_ref, current_workbook_path, current_sheet_name, 'current'
-                        )
-                        references.extend(range_refs)
-                    else:
-                        # Single cell reference
-                        references.append({
-                            'workbook_path': current_workbook_path,
-                            'sheet_name': current_sheet_name,
-                            'cell_address': cell_ref.replace('$', ''),
-                            'type': 'current'
-                        })
-
-                add_processed_span(start, end)
+            # 檢查是否為外部引用
+            if '[' in sheet_part_raw and ']' in sheet_part_raw:
+                # 增強的外部路徑清理（使用proven方法）
+                decoded_ref = unquote(sheet_part_raw)
+                cleaned_ref = decoded_ref.strip("\' ! \"").strip()
+                cleaned_ref = cleaned_ref.replace('\\\\', '\\')
                 
-            except Exception as e:
-                print(f"Warning: Could not process reference from match '{match.group(0)}': {e}")
-                continue
+                # 特殊處理雙引號模式: ''path''!
+                if cleaned_ref.startswith("'") and cleaned_ref.endswith("'"):
+                    cleaned_ref = cleaned_ref[1:-1]
+                    cleaned_ref = cleaned_ref.strip()
+                
+                try:
+                    workbook_part, sheet_name = cleaned_ref.rsplit(']', 1)
+                    workbook_part += ']'
+                    dir_path, file_name = workbook_part.rsplit('[', 1)
+                    file_name = file_name.rstrip(']')
+                    
+                    workbook_path = os.path.normpath(os.path.join(dir_path, file_name))
+                    
+                    references.append({
+                        'workbook_path': workbook_path,
+                        'sheet_name': sheet_name,
+                        'cell_address': cell_address,
+                        'type': 'external'
+                    })
+                except ValueError:
+                    continue
+            else:
+                # 本地絕對引用
+                sheet_name = sheet_part_raw.strip("\'!")
+                references.append({
+                    'workbook_path': current_workbook_path,
+                    'sheet_name': sheet_name,
+                    'cell_address': cell_address,
+                    'type': 'local_absolute'
+                })
+
+        # 處理相對引用（使用proven方法避免路徑組件的誤匹配）
+        path_exclusions = set()
+        
+        # 找出所有引號區段
+        quoted_sections = re.finditer(r"'[^']*'", normalized_formula)
+        for quoted_match in quoted_sections:
+            path_exclusions.add(quoted_match.span())
+        
+        # 找出所有方括號區段
+        bracketed_sections = re.finditer(r"\[[^\]]*\]", normalized_formula)
+        for bracket_match in bracketed_sections:
+            path_exclusions.add(bracket_match.span())
+        
+        # 更精確的相對引用模式
+        rel_pattern = r"(?<![A-Za-z0-9_\\/])([A-Z]{1,3})([0-9]{1,7})(?![A-Za-z0-9_\\/])"
+        
+        for match in re.finditer(rel_pattern, normalized_formula):
+            is_processed = False
+            match_start, match_end = match.span()
+            
+            # 檢查是否在已處理的絕對引用範圍內
+            for span_start, span_end in processed_spans:
+                if span_start <= match_start and match_end <= span_end:
+                    is_processed = True
+                    break
+            
+            # 檢查是否在路徑排除區域內
+            if not is_processed:
+                for excl_start, excl_end in path_exclusions:
+                    if excl_start <= match_start and match_end <= excl_end:
+                        is_processed = True
+                        break
+            
+            # 額外的上下文檢查
+            if not is_processed:
+                context_start = max(0, match_start - 5)
+                context_end = min(len(normalized_formula), match_end + 5)
+                context = normalized_formula[context_start:context_end]
+                
+                path_indicators = ['\\', '/', '[', ']', '.xl']
+                if any(indicator in context for indicator in path_indicators):
+                    is_processed = True
+            
+            if not is_processed:
+                col = match.group(1)
+                row = match.group(2)
+                
+                try:
+                    col_len = len(col)
+                    row_num = int(row)
+                    
+                    if 1 <= col_len <= 3 and 1 <= row_num <= 1048576:
+                        cell_ref = f"{col}{row}"
+                        if cell_ref.lower() not in ['md9', 'ab12', 'cd34', 'xy99']:
+                            references.append({
+                                'workbook_path': current_workbook_path,
+                                'sheet_name': current_sheet_name,
+                                'cell_address': cell_ref,
+                                'type': 'relative'
+                            })
+                except ValueError:
+                    continue
+
+        # === 新功能：處理範圍引用 ===
+        # 在所有單個儲存格引用處理完後，檢查是否有範圍引用需要處理
+        # 使用簡單的範圍模式匹配並應用range處理邏輯
+        range_pattern = r"([A-Z]{1,3}\d{1,7}:[A-Z]{1,3}\d{1,7})"
+        
+        for range_match in re.finditer(range_pattern, normalized_formula):
+            range_ref = range_match.group(1)
+            range_start, range_end = range_match.span()
+            
+            # 檢查這個範圍是否已經被處理過
+            is_range_processed = False
+            for span_start, span_end in processed_spans:
+                if span_start <= range_start and range_end <= span_end:
+                    is_range_processed = True
+                    break
+            
+            # 檢查是否在路徑排除區域內
+            if not is_range_processed:
+                for excl_start, excl_end in path_exclusions:
+                    if excl_start <= range_start and range_end <= excl_end:
+                        is_range_processed = True
+                        break
+            
+            if not is_range_processed:
+                # 處理範圍引用
+                range_refs = self._process_range_reference(
+                    range_ref, current_workbook_path, current_sheet_name, 'current'
+                )
+                references.extend(range_refs)
 
         return references
     
