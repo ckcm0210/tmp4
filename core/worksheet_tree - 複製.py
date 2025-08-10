@@ -24,10 +24,6 @@ from utils.range_optimizer import parse_excel_address
 from core.excel_connector import activate_excel_window, find_external_workbook_path
 from openpyxl.utils import get_column_letter, column_index_from_string
 
-
-_last_range_threshold = 5
-_last_max_depth = 10
-
 def apply_filter(controller, event=None):
     controller.view.result_tree.delete(*controller.view.result_tree.get_children())
     controller.cell_addresses.clear()
@@ -1389,40 +1385,27 @@ def explode_dependencies_popup(controller, workbook_path, sheet_name, cell_addre
         
         ttk.Label(params_frame, text="levels deep").pack(side=tk.LEFT, padx=2)
         
-
+        # 參數預覽和更新函數
         def update_params_preview():
             """更新參數預覽"""
-            global _last_range_threshold, _last_max_depth
-            
-            try:
-                # Range threshold處理
-                range_val = range_threshold_var.get()
-                if range_val:
-                    _last_range_threshold = range_val
-                
-                # Max depth處理
-                depth_str = str(max_depth_var.get()).strip()
-                if depth_str and depth_str != "":
-                    try:
-                        depth_val = int(float(depth_str))
-                        _last_max_depth = depth_val
-                    except (ValueError, TypeError):
-                        depth_val = _last_max_depth
-                        max_depth_var.set(str(_last_max_depth))
-                else:
-                    depth_val = _last_max_depth
-                    max_depth_var.set(str(_last_max_depth))
-                
-                progress_var.set(f"Ready to analyze with Range Threshold: {_last_range_threshold}, Max Depth: {depth_val}. Click 'Start Analysis' to begin.")
-                
-            except Exception as e:
-                print(f"Error in update_params_preview: {e}")
-                # 使用默認值
-                _last_range_threshold = 5
-                _last_max_depth = 10
-                range_threshold_var.set(_last_range_threshold)
-                max_depth_var.set(str(_last_max_depth))
-                progress_var.set(f"Ready to analyze with Range Threshold: {_last_range_threshold}, Max Depth: {_last_max_depth}. Click 'Start Analysis' to begin.")
+            range_val = range_threshold_var.get()
+            depth_val = max_depth_var.get()
+            progress_var.set(f"Ready to analyze with Range Threshold: {range_val}, Max Depth: {depth_val}. Click 'Start Analysis' to begin.")
+        
+        # 綁定參數變更事件
+        range_threshold_var.trace('w', lambda *args: update_params_preview())
+        max_depth_var.trace('w', lambda *args: update_params_preview())
+        
+        # 初始化參數預覽
+        update_params_preview()
+        
+        # 刷新按鈕
+        refresh_btn = ttk.Button(
+            options_control_frame, 
+            text="Refresh Display", 
+            command=lambda: refresh_tree_display()
+        )
+        refresh_btn.pack(side=tk.RIGHT, padx=5)
 
         # 圖表生成按鈕
         def handle_generate_graph():
@@ -1687,7 +1670,6 @@ def explode_dependencies_popup(controller, workbook_path, sheet_name, cell_addre
                 # 完整顯示：使用 full_address 格式
                 return node.get('full_address', address)
         
-
         def populate_tree(node, parent=''):
             """遞歸填充樹狀視圖"""
             try:
@@ -1699,11 +1681,9 @@ def explode_dependencies_popup(controller, workbook_path, sheet_name, cell_addre
                 address = format_address_display(raw_address, node)
                 formula = format_formula_display(raw_formula)
                 
-                # === 修復：處理所有動態函數的resolved formula ===
+                # === 新增：處理INDIRECT的resolved formula ===
                 resolved_formula = ""
-                # 檢查是否有任何動態函數解析
-                if (node.get('has_indirect', False) or 
-                    node.get('has_index', False)):  # 添加INDEX檢查
+                if node.get('has_indirect', False):
                     raw_resolved = node.get('resolved_formula', '')
                     # 不要截短resolved formula，完整顯示
                     resolved_formula = format_formula_display(raw_resolved)

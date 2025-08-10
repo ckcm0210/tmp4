@@ -13,6 +13,7 @@ from openpyxl.utils import get_column_letter
 import re
 from core.excel_connector import activate_excel_window
 from core.excel_scanner import refresh_data
+import time
 
 def export_formulas_to_excel(controller):
     if not controller.view.result_tree.get_children():

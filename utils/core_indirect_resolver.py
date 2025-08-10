@@ -6,6 +6,7 @@ Core INDIRECT Resolver - 直接使用你的unified_indirect_resolver核心邏輯
 
 import sys
 import os
+import traceback
 
 def resolve_indirect_core(formula, workbook_path, sheet_name, current_cell=None):
     """

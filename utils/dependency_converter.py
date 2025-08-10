@@ -2,6 +2,8 @@
 
 import os
 import re
+import colorsys
+import urllib.parse
 
 def _format_formula_for_display(formula, max_line_length=50):
     """

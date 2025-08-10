@@ -9,6 +9,7 @@ import time
 import threading
 import gc
 from collections import OrderedDict
+from openpyxl import load_workbook
 
 
 class SafeWorkbookCache:

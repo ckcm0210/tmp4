@@ -9,6 +9,13 @@ for Inspect Mode, reusing existing components but hiding unnecessary elements.
 import tkinter as tk
 from tkinter import ttk
 from ui.worksheet.controller import WorksheetController
+import traceback
+import win32com.client
+from tkinter import messagebox
+import re
+import time
+from core.excel_scanner import refresh_data
+from core.worksheet_tree import on_select
 
 class InspectModeView:
     """Simplified worksheet view for Inspect Mode"""

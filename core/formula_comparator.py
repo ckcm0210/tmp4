@@ -13,6 +13,8 @@ import re
 from ui.worksheet.controller import WorksheetController
 from ui.worksheet.view import WorksheetView
 from core.excel_scanner import refresh_data
+import time
+from core.worksheet_tree import apply_filter
 
 class ExcelFormulaComparator:
     def __init__(self, parent_frame, main_window):

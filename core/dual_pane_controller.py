@@ -9,6 +9,7 @@ Each pane can independently scan and analyze a single cell from different Excel 
 import tkinter as tk
 from tkinter import ttk
 from ui.worksheet.controller import WorksheetController
+import win32com.client
 
 class DualPaneController:
     """Manages dual-pane layout for Inspect Mode"""

@@ -8,6 +8,8 @@ import re
 import os
 from urllib.parse import unquote
 import openpyxl
+import sys
+import traceback
 
 class IndirectProcessor:
     """INDIRECT函數處理器"""

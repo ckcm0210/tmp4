@@ -9,6 +9,7 @@ including external file access and worksheet management.
 import os
 import re
 import openpyxl
+import xlrd
 
 
 def read_external_cell_value(current_workbook_path, external_file_full_path, external_sheet_name, cell_address):

@@ -39,6 +39,35 @@ class GraphGenerator:
                 if shortest_addr.startswith("'"):
                     shortest_addr = shortest_addr[1:]
             
+            # === 檢查是否包含INDEX或INDIRECT函數 ===
+            formula = node.get("full_formula_label", "") or node.get("short_formula_label", "")
+            has_dynamic_function = (
+                "INDEX(" in formula.upper() or 
+                "INDIRECT(" in formula.upper()
+            )
+            
+            # === 處理resolved_formula - 只處理路徑部分，保留公式內容 ===
+            resolved_formula = node.get("resolved_formula", "")
+            short_resolved_formula = resolved_formula
+            full_resolved_formula = resolved_formula
+            
+            # 如果resolved包含路徑，創建簡短版本（只影響路徑顯示）
+            if resolved_formula and ('[' in resolved_formula or '!' in resolved_formula):
+                # 簡短版本：移除檔案路徑，但保留工作表引用
+                if ']' in resolved_formula and '[' in resolved_formula:
+                    # 處理 [file]sheet!cell 格式 -> sheet!cell
+                    last_bracket = resolved_formula.rfind(']')
+                    if last_bracket != -1:
+                        temp_formula = resolved_formula[last_bracket + 1:]
+                        if temp_formula.startswith("'"):
+                            temp_formula = temp_formula[1:]
+                        short_resolved_formula = temp_formula
+                    else:
+                        short_resolved_formula = resolved_formula
+                else:
+                    # 如果沒有檔案引用，保持原樣
+                    short_resolved_formula = resolved_formula
+            
             processed_nodes.append({
                 "id": self._safe_string(node["id"]),
                 "label": self._safe_string(node["label"]),
@@ -57,8 +86,10 @@ class GraphGenerator:
                 "short_formula_label": self._safe_string(node["short_formula_label"]),
                 "full_formula_label": self._safe_string(node["full_formula_label"]),
                 "value_label": self._safe_string(node["value_label"]),
-                # === 新增：INDIRECT的resolved字段 ===
-                "resolved_formula": self._safe_string(node.get("resolved_formula", ""))
+                "resolved_formula": self._safe_string(resolved_formula),
+                "short_resolved_formula": self._safe_string(short_resolved_formula),
+                "full_resolved_formula": self._safe_string(full_resolved_formula),
+                "has_dynamic_function": has_dynamic_function
             })
         
         processed_edges = []
@@ -219,7 +250,7 @@ class GraphGenerator:
             
             Network.prototype.reorganizeLayout = function() {
                 var verticalSpacingSlider = document.getElementById('verticalSpacingSlider');
-                var level_y_step = verticalSpacingSlider ? parseInt(verticalSpacingSlider.value) : 450;
+                var level_y_step = verticalSpacingSlider ? parseInt(verticalSpacingSlider.value) : 250;
 
                 var initialNodes = this.nodes.getInitialData();
                 var levels = {};
@@ -275,7 +306,6 @@ class GraphGenerator:
                 ctx.scale(this.scale, this.scale);
                 ctx.translate(this.viewOffset.x, this.viewOffset.y);
                 
-                // 繪製邊
                 var edges = this.edges.get();
                 edges.forEach(edge => {
                     var fromPos = this.nodePositions[edge.from];
@@ -284,20 +314,18 @@ class GraphGenerator:
                         var edgeId = edge.from + '-' + edge.to;
                         var isHighlighted = this.highlightedEdges && this.highlightedEdges.has(edgeId);
                         
-                        // === 新增：高亮邊的發光效果 ===
                         if (isHighlighted) {
-                            // 先繪製發光效果
-                            ctx.shadowColor = '#FFD700'; // 金色光暈
+                            ctx.shadowColor = '#FFD700';
                             ctx.shadowBlur = 8;
                             ctx.shadowOffsetX = 0;
                             ctx.shadowOffsetY = 0;
-                            ctx.strokeStyle = '#000000'; // 黑色
-                            ctx.lineWidth = 4; // 粗線
+                            ctx.strokeStyle = '#000000';
+                            ctx.lineWidth = 4;
                         } else {
                             ctx.shadowColor = 'transparent';
                             ctx.shadowBlur = 0;
-                            ctx.strokeStyle = '#848484'; // 原始顏色
-                            ctx.lineWidth = 1; // 原始寬度
+                            ctx.strokeStyle = '#848484';
+                            ctx.lineWidth = 1;
                         }
                         
                         ctx.beginPath();
@@ -305,7 +333,6 @@ class GraphGenerator:
                         ctx.lineTo(toPos.x, toPos.y);
                         ctx.stroke();
                         
-                        // 清除陰影效果（避免影響箭頭）
                         ctx.shadowColor = 'transparent';
                         ctx.shadowBlur = 0;
                         
@@ -313,7 +340,6 @@ class GraphGenerator:
                     }
                 });
                 
-                // 繪製節點
                 var nodes = this.nodes.get();
                 nodes.forEach(node => {
                     var pos = this.nodePositions[node.id];
@@ -335,39 +361,32 @@ class GraphGenerator:
                 var width = nodeSize.width;
                 var height = nodeSize.height;
                 
-                // === 新增：高亮節點的"著燈"效果 ===
                 if (isHighlighted) {
-                    // 先繪製發光效果（外圍光暈）
-                    ctx.shadowColor = '#FFD700'; // 金色光暈
+                    ctx.shadowColor = '#FFD700';
                     ctx.shadowBlur = 15;
                     ctx.shadowOffsetX = 0;
                     ctx.shadowOffsetY = 0;
                     
-                    // 使用更亮的顏色作為高亮背景
                     var originalColor = node.color || '#97C2FC';
-                    var brightColor = this.brightenColor(originalColor, 0.4); // 增亮40%
+                    var brightColor = this.brightenColor(originalColor, 0.4);
                     ctx.fillStyle = brightColor;
                 } else {
-                    // 清除陰影效果
                     ctx.shadowColor = 'transparent';
                     ctx.shadowBlur = 0;
                     ctx.fillStyle = node.color || '#97C2FC';
                 }
                 
-                // 繪製節點背景
                 ctx.fillRect(x - width/2, y - height/2, width, height);
                 
-                // 清除陰影效果（避免影響邊框）
                 ctx.shadowColor = 'transparent';
                 ctx.shadowBlur = 0;
                 
-                // === 高亮節點的邊框樣式 ===
                 if (isHighlighted) {
-                    ctx.strokeStyle = '#000000'; // 黑色邊框
-                    ctx.lineWidth = 4; // 粗邊框
+                    ctx.strokeStyle = '#000000';
+                    ctx.lineWidth = 4;
                 } else {
-                    ctx.strokeStyle = '#2B7CE9'; // 原始邊框顏色
-                    ctx.lineWidth = 1; // 原始邊框寬度
+                    ctx.strokeStyle = '#2B7CE9';
+                    ctx.lineWidth = 1;
                 }
                 ctx.strokeRect(x - width/2, y - height/2, width, height);
                 
@@ -466,13 +485,12 @@ class GraphGenerator:
                 ctx.lineTo(arrowX - length * Math.cos(angle + Math.PI / 6), 
                           arrowY - length * Math.sin(angle + Math.PI / 6));
                 
-                // === 新增：高亮箭頭的樣式 ===
                 if (isHighlighted) {
-                    ctx.strokeStyle = '#000000'; // 黑色箭頭
-                    ctx.lineWidth = 4; // 粗箭頭
+                    ctx.strokeStyle = '#000000';
+                    ctx.lineWidth = 4;
                 } else {
-                    ctx.strokeStyle = '#848484'; // 原始箭頭顏色
-                    ctx.lineWidth = 1; // 原始箭頭寬度
+                    ctx.strokeStyle = '#848484';
+                    ctx.lineWidth = 1;
                 }
                 ctx.stroke();
             };
@@ -480,13 +498,11 @@ class GraphGenerator:
             Network.prototype.setupEvents = function() {
                 var self = this;
                 
-                // === 新增：高亮功能相關變量 ===
                 this.currentHighlightedNode = null;
                 this.originalNodeStyles = new Map();
                 this.originalEdgeStyles = new Map();
                 this.isClickForHighlight = false;
                 
-                // 保存原始樣式
                 this.saveOriginalStyles();
                 
                 this.canvas.addEventListener('mousedown', function(e) {
@@ -514,18 +530,14 @@ class GraphGenerator:
                             clickedNodeId = node.id;
                             nodeClicked = true;
                             
-                            // === 修復：同時支持拖拽和高亮 ===
-                            // 先設置拖拽準備狀態
                             self.dragNode = node.id;
                             self.dragOffset = {
                                 x: mouseX - pos.x,
                                 y: mouseY - pos.y
                             };
                             
-                            // 如果是左鍵單擊，準備高亮檢測
                             if (e.button === 0 && !e.ctrlKey && !e.shiftKey && !e.altKey) {
                                 self.isClickForHighlight = true;
-                                // 延遲處理高亮，如果沒有拖拽才執行高亮
                                 setTimeout(function() {
                                     if (self.isClickForHighlight && !self.isDragging) {
                                         self.handleNodeHighlight(clickedNodeId);
@@ -537,7 +549,6 @@ class GraphGenerator:
                     }
                     
                     if (!nodeClicked) {
-                        // === 新增：點擊空白區域清除高亮 ===
                         if (e.button === 0) {
                             self.clearHighlight();
                             self.currentHighlightedNode = null;
@@ -552,15 +563,14 @@ class GraphGenerator:
                     var mouseX = (e.clientX - rect.left) / self.scale - self.viewOffset.x;
                     var mouseY = (e.clientY - rect.top) / self.scale - self.viewOffset.y;
                     
-                    // === 修復：優先處理拖拽，取消高亮點擊 ===
                     if (self.dragNode && !self.isDragging) {
                         var moveDistance = Math.sqrt(
                             Math.pow(e.clientX - rect.left - self.lastMousePos.x, 2) + 
                             Math.pow(e.clientY - rect.top - self.lastMousePos.y, 2)
                         );
-                        if (moveDistance > 3) { // 移動超過3像素立即進入拖拽模式
+                        if (moveDistance > 3) {
                             self.isDragging = true;
-                            self.isClickForHighlight = false; // 取消高亮
+                            self.isClickForHighlight = false;
                             self.canvas.style.cursor = 'grabbing';
                         }
                     }
@@ -585,7 +595,6 @@ class GraphGenerator:
                 });
                 
                 this.canvas.addEventListener('mouseup', function(e) {
-                    // === 新增：重置高亮點擊標記 ===
                     setTimeout(function() {
                         self.isClickForHighlight = false;
                     }, 200);
@@ -625,12 +634,10 @@ class GraphGenerator:
                 });
             };
             
-            // === 新增：高亮功能方法 ===
             Network.prototype.saveOriginalStyles = function() {
                 var nodes = this.nodes.get();
                 var edges = this.edges.get();
                 
-                // 保存節點原始樣式
                 for (var i = 0; i < nodes.length; i++) {
                     var node = nodes[i];
                     this.originalNodeStyles.set(node.id, {
@@ -640,7 +647,6 @@ class GraphGenerator:
                     });
                 }
                 
-                // 保存邊的原始樣式
                 for (var i = 0; i < edges.length; i++) {
                     var edge = edges[i];
                     var edgeId = edge.from + '-' + edge.to;
@@ -649,24 +655,16 @@ class GraphGenerator:
                         width: 1
                     });
                 }
-                
-                console.log('Saved original styles for', nodes.length, 'nodes and', edges.length, 'edges');
             };
             
             Network.prototype.handleNodeHighlight = function(nodeId) {
-                // 如果點擊的是已經高亮的節點，則取消高亮
                 if (this.currentHighlightedNode === nodeId) {
                     this.clearHighlight();
                     this.currentHighlightedNode = null;
-                    console.log('Cleared highlight for node:', nodeId);
                 } else {
-                    // 先清除之前的高亮
                     this.clearHighlight();
-                    
-                    // 高亮新選中的節點及其相關節點
                     this.highlightNodeAndRelated(nodeId);
                     this.currentHighlightedNode = nodeId;
-                    console.log('Highlighted node and related:', nodeId);
                 }
             };
             
@@ -675,77 +673,56 @@ class GraphGenerator:
                 var relatedEdges = [];
                 var relatedNodeIds = new Set();
                 
-                // 添加被點擊的節點
                 relatedNodeIds.add(nodeId);
                 
-                // 找到與該節點相關的所有邊
                 for (var i = 0; i < allEdges.length; i++) {
                     var edge = allEdges[i];
                     if (edge.from === nodeId || edge.to === nodeId) {
                         relatedEdges.push(edge);
                         
-                        // 添加相關節點
                         if (edge.from === nodeId) {
-                            relatedNodeIds.add(edge.to); // 下一層節點
+                            relatedNodeIds.add(edge.to);
                         }
                         if (edge.to === nodeId) {
-                            relatedNodeIds.add(edge.from); // 上一層節點
+                            relatedNodeIds.add(edge.from);
                         }
                     }
                 }
                 
-                console.log('Related nodes:', Array.from(relatedNodeIds));
-                console.log('Related edges:', relatedEdges.length);
-                
-                // 高亮相關節點
                 this.highlightNodes(Array.from(relatedNodeIds));
-                
-                // 高亮相關連線
                 this.highlightEdges(relatedEdges);
-                
-                // 重新繪製
                 this.draw();
             };
             
             Network.prototype.highlightNodes = function(nodeIds) {
-                // 這裡我們直接修改節點的繪製樣式，而不是更新DataSet
-                // 因為我們使用的是自定義的canvas繪製
                 this.highlightedNodes = new Set(nodeIds);
-                console.log('Highlighted nodes:', nodeIds);
             };
             
             Network.prototype.highlightEdges = function(edgesToHighlight) {
-                // 保存需要高亮的邊
                 this.highlightedEdges = new Set();
                 for (var i = 0; i < edgesToHighlight.length; i++) {
                     var edge = edgesToHighlight[i];
                     var edgeId = edge.from + '-' + edge.to;
                     this.highlightedEdges.add(edgeId);
                 }
-                console.log('Highlighted edges:', edgesToHighlight.length);
             };
             
             Network.prototype.clearHighlight = function() {
                 this.highlightedNodes = new Set();
                 this.highlightedEdges = new Set();
                 this.draw();
-                console.log('Cleared all highlights');
             };
             
-            // === 新增：顏色增亮函數 ===
             Network.prototype.brightenColor = function(color, factor) {
-                // 將十六進制顏色轉換為RGB並增亮
                 var hex = color.replace('#', '');
                 var r = parseInt(hex.substr(0, 2), 16);
                 var g = parseInt(hex.substr(2, 2), 16);
                 var b = parseInt(hex.substr(4, 2), 16);
                 
-                // 增亮計算：向255靠近
                 r = Math.min(255, Math.floor(r + (255 - r) * factor));
                 g = Math.min(255, Math.floor(g + (255 - g) * factor));
                 b = Math.min(255, Math.floor(b + (255 - b) * factor));
                 
-                // 轉換回十六進制
                 var rHex = r.toString(16).padStart(2, '0');
                 var gHex = g.toString(16).padStart(2, '0');
                 var bHex = b.toString(16).padStart(2, '0');
@@ -793,8 +770,6 @@ class GraphGenerator:
             z-index: 1000;
             font-family: sans-serif;
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            
-            /* **修改: 將闊度增加到 360px** */
             width: 360px;
             max-height: 90vh;
             overflow-y: auto;
@@ -905,7 +880,7 @@ class GraphGenerator:
         
         <div class="control-item">
             <label>
-                <input type='checkbox' id='shortenAddressToggle'> Hide Address Path
+                <input type='checkbox' id='hideAddressFileToggle'> Hide Address File Name
             </label>
         </div>
 
@@ -921,6 +896,12 @@ class GraphGenerator:
             </label>
         </div>
         
+        <div class="control-item">
+            <label>
+                <input type='checkbox' id='resolvedToggle'> Show Full Resolved Path
+            </label>
+        </div>
+        
         <div class="slider-container">
             <label for='fontSizeSlider'>
                 Node Font Size: <span id='fontSizeValue'>14</span>px
@@ -929,10 +910,17 @@ class GraphGenerator:
         </div>
         
         <div class="slider-container">
-            <label for='verticalSpacingSlider'>
-                Vertical Spacing: <span id='verticalSpacingValue'>450</span>px
+            <label for='lineWidthSlider'>
+                Line Width: <span id='lineWidthValue'>60</span> chars
             </label>
-            <input type='range' id='verticalSpacingSlider' min='0' max='800' value='450'>
+            <input type='range' id='lineWidthSlider' min='30' max='120' value='60'>
+        </div>
+        
+        <div class="slider-container">
+            <label for='verticalSpacingSlider'>
+                Vertical Spacing: <span id='verticalSpacingValue'>250</span>px
+            </label>
+            <input type='range' id='verticalSpacingSlider' min='0' max='800' value='250'>
         </div>
         
         <div class="slider-container">
@@ -985,32 +973,57 @@ class GraphGenerator:
         
         function initControls() {{
             var controlsPanel = document.getElementById('controls-panel');
-            var shortenAddressToggle = document.getElementById('shortenAddressToggle');
+            var hideAddressFileToggle = document.getElementById('hideAddressFileToggle');
             var addressToggle = document.getElementById('addressToggle');
             var fullAddressLabel = document.getElementById('fullAddressLabel');
             var formulaToggle = document.getElementById('formulaToggle');
+            var resolvedToggle = document.getElementById('resolvedToggle');
             var fontSizeSlider = document.getElementById('fontSizeSlider');
             var fontSizeValue = document.getElementById('fontSizeValue');
+            var lineWidthSlider = document.getElementById('lineWidthSlider');
+            var lineWidthValue = document.getElementById('lineWidthValue');
             var verticalSpacingSlider = document.getElementById('verticalSpacingSlider');
             var verticalSpacingValue = document.getElementById('verticalSpacingValue');
             var uiFontSizeSlider = document.getElementById('uiFontSizeSlider');
             var uiFontSizeValue = document.getElementById('uiFontSizeValue');
             var reorganizeButton = document.getElementById('reorganizeButton');
             
+            // === 簡化的換行函數 - 只在指定字符數處截斷 ===
+            function wrapText(text, maxWidth) {{
+                if (!text || text.length <= maxWidth) {{
+                    return text;
+                }}
+                
+                var result = [];
+                var i = 0;
+                
+                while (i < text.length) {{
+                    var chunk = text.substr(i, maxWidth);
+                    result.push(chunk);
+                    i += maxWidth;
+                }}
+                
+                return result.join('\\n');
+            }}
+            
             function updateNodeLabels() {{
                 if (!network || !nodes) return;
                 
-                var shortenAddress = shortenAddressToggle.checked;
+                console.log('Updating node labels...');
+                
+                var hideAddressFile = hideAddressFileToggle.checked;
                 var showFullAddress = addressToggle.checked;
                 var showFullFormula = formulaToggle.checked;
+                var showFullResolved = resolvedToggle.checked;
                 var fontSize = parseInt(fontSizeSlider.value);
+                var lineWidth = parseInt(lineWidthSlider.value);
                 
                 var allNodes = nodes.get();
                 var updatedNodes = [];
                 
                 allNodes.forEach(function(node) {{
                     var addressLabel;
-                    if (shortenAddress) {{
+                    if (hideAddressFile) {{
                         addressLabel = node.shortest_address_label || node.short_address_label;
                     }} else {{
                         addressLabel = showFullAddress ? node.full_address_label : node.short_address_label;
@@ -1020,16 +1033,32 @@ class GraphGenerator:
                     
                     var newLabel = 'Address : <b>' + (addressLabel || node.short_address_label) + '</b>';
                     
+                    // === 套用簡化換行到Formula ===
                     if (formulaLabel && formulaLabel !== 'N/A' && formulaLabel !== null) {{
                         var displayFormula = formulaLabel.startsWith('=') ? formulaLabel : '=' + formulaLabel;
+                        displayFormula = wrapText(displayFormula, lineWidth);
                         newLabel += '\\n\\nFormula : <i>' + displayFormula + '</i>';
                     }} else {{
                         newLabel += '\\n\\nFormula : <i>N/A</i>';
                     }}
                     
-                    // === 新增：INDIRECT的resolved字段 ===
+                    // === 套用簡化換行到Resolved ===
+                    var shouldShowResolved = false;
+                    var resolvedToUse = '';
+                    
                     if (node.resolved_formula && node.resolved_formula !== 'N/A' && node.resolved_formula !== null && node.resolved_formula !== formulaLabel) {{
-                        var displayResolved = node.resolved_formula.startsWith('=') ? node.resolved_formula : '=' + node.resolved_formula;
+                        if (node.has_dynamic_function) {{
+                            shouldShowResolved = true;
+                            resolvedToUse = showFullResolved ? node.full_resolved_formula : node.short_resolved_formula;
+                        }} else if (showFullResolved) {{
+                            shouldShowResolved = true;
+                            resolvedToUse = node.full_resolved_formula;
+                        }}
+                    }}
+                    
+                    if (shouldShowResolved && resolvedToUse) {{
+                        var displayResolved = resolvedToUse.startsWith('=') ? resolvedToUse : '=' + resolvedToUse;
+                        displayResolved = wrapText(displayResolved, lineWidth);
                         newLabel += '\\n\\nResolved : <i>' + displayResolved + '</i>';
                     }}
                     
@@ -1047,10 +1076,17 @@ class GraphGenerator:
                     allNodes.forEach(node => network.calculateNodeSize(node));
                     network.reorganizeLayout();
                 }}
+                
+                console.log('Node labels updated with simple line wrapping, line width:', lineWidth);
             }}
             
             function updateNodeFontSize() {{
                 fontSizeValue.textContent = fontSizeSlider.value;
+                updateNodeLabels();
+            }}
+
+            function updateLineWidth() {{
+                lineWidthValue.textContent = lineWidthSlider.value;
                 updateNodeLabels();
             }}
 
@@ -1101,7 +1137,8 @@ class GraphGenerator:
                 fileLegendDiv.innerHTML = legendHTML;
             }}
             
-            shortenAddressToggle.addEventListener('change', function() {{
+            // === 事件監聽器 ===
+            hideAddressFileToggle.addEventListener('change', function() {{
                 if (this.checked) {{
                     addressToggle.disabled = true;
                     fullAddressLabel.classList.add('disabled');
@@ -1114,13 +1151,18 @@ class GraphGenerator:
 
             addressToggle.addEventListener('change', updateNodeLabels);
             formulaToggle.addEventListener('change', updateNodeLabels);
+            resolvedToggle.addEventListener('change', updateNodeLabels);
             fontSizeSlider.addEventListener('input', updateNodeFontSize);
+            lineWidthSlider.addEventListener('input', updateLineWidth);
             verticalSpacingSlider.addEventListener('input', updateVerticalSpacing);
             uiFontSizeSlider.addEventListener('input', updateUiFontSize);
             reorganizeButton.addEventListener('click', handleReorganize);
             
             generateFileLegend();
             updateUiFontSize();
+            updateNodeLabels();
+            
+            console.log('Controls initialized with simple line wrapping');
         }}
         
         window.addEventListener('load', function() {{

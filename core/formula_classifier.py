@@ -1,4 +1,4 @@
-import re
+
 from .link_analyzer import is_external_link_regex_match
 
 def classify_formula_type(formula):

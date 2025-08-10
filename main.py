@@ -3,6 +3,7 @@ from tkinter import ttk
 from core.formula_comparator import ExcelFormulaComparator
 from ui.workspace_view import Workspace
 from core.mode_manager import ModeManager, AppMode
+from ui.modes.inspect_mode import InspectMode
 
 class ExcelToolsApp:
     """Main application class with mode management support"""

@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
 Enhanced Dependency Exploder with Ultra Safe COM Management - ULTRA SAFE VERSION
-超安全版本 - 完全避免檔案鎖定問題 + INDEX 函數解析支援 (完整版本)
-Last Updated: 2025-08-10 07:15:00 UTC
+超安全版本 - 完全避免檔案鎖定問題
+Last Updated: 2025-08-08 16:20:37 UTC
 User: ckcm0210
 """
 
@@ -75,7 +75,7 @@ class ProgressCallback:
         self.current_step = 0
 
 class EnhancedDependencyExploder:
-    """超安全版公式依賴鏈爆炸分析器 - 完全避免檔案鎖定 + INDEX支援"""
+    """超安全版公式依賴鏈爆炸分析器 - 完全避免檔案鎖定"""
     
     def __init__(self, max_depth=10, range_expand_threshold=5, progress_callback=None):
         self.max_depth = max_depth
@@ -88,7 +88,6 @@ class EnhancedDependencyExploder:
         self.our_excel_instances = {}
         self.excel_process_pids = set()  # 記錄我們創建的 Excel 程序 PID
         self.indirect_resolution_log = []
-        self.index_resolution_log = []  # 新增：INDEX解析日誌
         
         # 初始化 COM
         try:
@@ -108,7 +107,6 @@ class EnhancedDependencyExploder:
             except:
                 pass
     
-    # === 超安全清理相關方法（保持不變）===
     def _get_excel_processes_before(self):
         """獲取執行前的 Excel 程序列表"""
         excel_pids = set()
@@ -170,7 +168,6 @@ class EnhancedDependencyExploder:
         self.visited_cells.clear()
         self.circular_refs.clear()
         self.indirect_resolution_log.clear()
-        self.index_resolution_log.clear()  # 新增：清理INDEX日誌
         self.processed_count = 0
         self.excel_process_pids.clear()
         
@@ -554,310 +551,9 @@ class EnhancedDependencyExploder:
                 'error': str(e),
                 'indirect_content': indirect_content
             }
-
-    # === INDEX 解析方法（來自debug版本）===
-    def _resolve_index_with_excel_corrected_simple(self, formula, workbook_path, sheet_name, cell_address):
-        """正確的INDEX解析 - 簡化版本"""
-        try:
-            self.progress_callback.update_progress(f"[INDEX-SIMPLE] 開始解析: {formula}")
-            
-            # 1. 提取所有 INDEX 函數
-            index_functions = self._extract_all_index_functions_debug(formula)
-            if not index_functions:
-                return {'success': False, 'error': 'No INDEX functions found'}
-            
-            resolved_formula = formula
-            static_references = []
-            calculation_details = []
-            internal_references = []
-            
-            # 2. 逐個解析 INDEX 函數
-            for i, index_func in enumerate(index_functions):
-                self.progress_callback.update_progress(f"[INDEX-SIMPLE] 處理INDEX#{i+1}: {index_func['content']}")
-                
-                # 3. 解析參數
-                params_result = self._extract_index_parameters_accurate_debug(index_func['content'])
-                if not params_result['success']:
-                    continue
-                    
-                array_param = params_result['array']
-                row_param = params_result['row']
-                col_param = params_result['column']
-                
-                self.progress_callback.update_progress(f"[INDEX-SIMPLE] 參數: array='{array_param}', row='{row_param}', col='{col_param}'")
-                
-                # 4. 分析array範圍的內部引用
-                temp_references = self._parse_formula_references_accurate(f"={array_param}", workbook_path, sheet_name)
-                internal_references.extend(temp_references)
-                
-                # 5. 檢查row和col是否為簡單數字
-                try:
-                    if self._is_simple_number(row_param) and self._is_simple_number(col_param):
-                        # 直接使用數字，不需要Excel計算
-                        row_value = int(float(row_param))
-                        col_value = int(float(col_param))
-                        self.progress_callback.update_progress(f"[INDEX-SIMPLE] 使用直接數值: row={row_value}, col={col_value}")
-                    else:
-                        # 只有複雜公式才需要Excel計算
-                        self.progress_callback.update_progress(f"[INDEX-SIMPLE] 複雜參數，需要Excel計算...")
-                        row_calc = self._calculate_indirect_safely(row_param, workbook_path, sheet_name, cell_address)
-                        col_calc = self._calculate_indirect_safely(col_param, workbook_path, sheet_name, cell_address)
-                        
-                        if not row_calc['success'] or not col_calc['success']:
-                            continue
-                            
-                        row_value = int(float(row_calc['static_reference']))
-                        col_value = int(float(col_calc['static_reference']))
-                        
-                except Exception as e:
-                    self.progress_callback.update_progress(f"[INDEX-SIMPLE] 參數處理失敗: {e}")
-                    continue
-                
-                # 6. 手動構建靜態引用
-                static_ref_result = self._build_static_reference_from_index_simple(
-                    array_param, row_value, col_value, workbook_path, sheet_name
-                )
-                
-                if static_ref_result['success']:
-                    final_static_ref = static_ref_result['static_reference']
-                    
-                    # 7. 替換原公式
-                    resolved_formula = resolved_formula.replace(index_func['full_function'], final_static_ref)
-                    self.progress_callback.update_progress(f"[INDEX-SIMPLE] 替換: {index_func['full_function']} -> {final_static_ref}")
-                    
-                    static_references.append(final_static_ref)
-                    calculation_details.append({
-                        'original_function': index_func['full_function'],
-                        'content': index_func['content'],
-                        'static_reference': final_static_ref,
-                        'array_param': array_param,
-                        'row_value': row_value,
-                        'col_value': col_value,
-                        'build_details': static_ref_result
-                    })
-            
-            return {
-                'success': len(static_references) > 0,
-                'resolved_formula': resolved_formula,
-                'static_references': static_references,
-                'calculation_details': calculation_details,
-                'original_formula': formula,
-                'internal_references': internal_references
-            }
-            
-        except Exception as e:
-            self.progress_callback.update_progress(f"[INDEX-SIMPLE] 解析異常: {e}")
-            return {'success': False, 'error': str(e), 'original_formula': formula, 'internal_references': []}
-
-    def _is_simple_number(self, param):
-        """檢查是否為簡單數字"""
-        try:
-            float(param.strip())
-            return True
-        except:
-            return False
-
-    def _build_static_reference_from_index_simple(self, array_param, row_offset, col_offset, workbook_path, sheet_name):
-        """簡化版靜態引用構建"""
-        try:
-            # 1. 解析範圍起始點
-            array_info = self._parse_array_reference_debug(array_param, workbook_path, sheet_name)
-            if not array_info['success']:
-                return array_info
-            
-            start_cell = array_info['start_cell']  # 例如: U12
-            
-            # 2. 解析起始位置
-            start_col, start_row = self._parse_cell_address_debug(start_cell)
-            
-            # 3. 計算最終位置 (Excel是1-based)
-            final_row = start_row + row_offset - 1
-            final_col = start_col + col_offset - 1
-            
-            final_cell = f"{self._col_num_to_letters(final_col)}{final_row}"
-            
-            # 4. 根據引用類型構建完整引用
-            if array_info['type'] == 'external':
-                static_ref = f"{array_info['prefix']}{final_cell}"
-            elif array_info['type'] == 'local':
-                static_ref = f"{array_info['target_sheet']}!{final_cell}"
-            else:  # current
-                static_ref = final_cell
-            
-            return {
-                'success': True,
-                'static_reference': static_ref,
-                'array_info': array_info,
-                'final_cell': final_cell,
-                'calculated_position': {'row': final_row, 'col': final_col, 'col_letter': self._col_num_to_letters(final_col)}
-            }
-            
-        except Exception as e:
-            error_msg = f'靜態引用構建失敗: {str(e)}'
-            return {'success': False, 'error': error_msg}
     
-    def _extract_all_index_functions_debug(self, formula):
-        """提取公式中所有的 INDEX 函數"""
-        index_functions = []
-        search_start = 0
-        
-        while True:
-            index_pos = formula.upper().find('INDEX(', search_start)
-            if index_pos == -1:
-                break
-            
-            start_pos = index_pos + len('INDEX(')
-            bracket_count = 1
-            current_pos = start_pos
-            
-            while current_pos < len(formula) and bracket_count > 0:
-                char = formula[current_pos]
-                if char == '(':
-                    bracket_count += 1
-                elif char == ')':
-                    bracket_count -= 1
-                current_pos += 1
-            
-            if bracket_count == 0:
-                content = formula[start_pos:current_pos-1]
-                full_function = formula[index_pos:current_pos]
-                
-                index_functions.append({
-                    'full_function': full_function,
-                    'content': content,
-                    'start_pos': index_pos,
-                    'end_pos': current_pos
-                })
-            
-            search_start = current_pos
-        
-        return index_functions
-    
-    def _extract_index_parameters_accurate_debug(self, content):
-        """精確提取INDEX函數的三個參數"""
-        try:
-            params = []
-            current_param = ""
-            bracket_count = 0
-            quote_count = 0
-            in_quotes = False
-            
-            for char in content:
-                if char == '"':
-                    quote_count += 1
-                    in_quotes = not in_quotes
-                elif char == '(' and not in_quotes:
-                    bracket_count += 1
-                elif char == ')' and not in_quotes:
-                    bracket_count -= 1
-                elif char == ',' and bracket_count == 0 and not in_quotes:
-                    params.append(current_param.strip())
-                    current_param = ""
-                    continue
-                
-                current_param += char
-            
-            # 添加最後一個參數
-            if current_param.strip():
-                params.append(current_param.strip())
-            
-            # INDEX函數至少需要2個參數，最多3個
-            if len(params) < 2:
-                return {'success': False, 'error': f'INDEX函數參數不足，需要至少2個參數，得到{len(params)}個'}
-            
-            # 如果只有2個參數，column默認為1
-            if len(params) == 2:
-                params.append('1')
-            
-            return {
-                'success': True,
-                'array': params[0],
-                'row': params[1],
-                'column': params[2] if len(params) > 2 else '1'
-            }
-            
-        except Exception as e:
-            return {'success': False, 'error': f'參數提取失敗: {str(e)}'}
-    
-    def _parse_array_reference_debug(self, array_param, workbook_path, sheet_name):
-        """解析array參數，確定引用類型和起始位置"""
-        try:
-            original_param = array_param
-            array_param = array_param.strip().strip('"').strip("'")
-            
-            # 檢查是否為常數數組
-            if array_param.startswith('{') and array_param.endswith('}'):
-                return {'success': False, 'error': 'INDEX暫不支持常數數組，請使用儲存格範圍'}
-            
-            # 解析不同類型的引用
-            if '[' in array_param and ']' in array_param:
-                # 外部文件引用：'C:\\Users\\user\\Desktop\\pytest\\[File.xlsx]Sheet1'!A1:Z100
-                match = re.match(r"'?([^']*\[[^\]]+\][^']*)'?!(.+)", array_param)
-                if match:
-                    file_sheet_part = match.group(1)
-                    range_part = match.group(2)
-                    
-                    start_cell = range_part.split(':')[0].replace('$', '') if ':' in range_part else range_part.replace('$', '')
-                    
-                    return {
-                        'success': True,
-                        'type': 'external',
-                        'prefix': f"'{file_sheet_part}'!",
-                        'range': range_part,
-                        'start_cell': start_cell,
-                        'target_sheet': file_sheet_part
-                    }
-            
-            elif '!' in array_param:
-                # 其他工作表引用：工作表2!A1:B100
-                sheet_part, range_part = array_param.split('!', 1)
-                sheet_part = sheet_part.strip("'")
-                
-                start_cell = range_part.split(':')[0].replace('$', '') if ':' in range_part else range_part.replace('$', '')
-                
-                return {
-                    'success': True,
-                    'type': 'local',
-                    'prefix': f"{sheet_part}!",
-                    'range': range_part,
-                    'start_cell': start_cell,
-                    'target_sheet': sheet_part
-                }
-            
-            else:
-                # 當前工作表引用：A1:Z100
-                start_cell = array_param.split(':')[0].replace('$', '') if ':' in array_param else array_param.replace('$', '')
-                
-                return {
-                    'success': True,
-                    'type': 'current',
-                    'prefix': '',
-                    'range': array_param,
-                    'start_cell': start_cell,
-                    'target_sheet': sheet_name
-                }
-                
-        except Exception as e:
-            return {'success': False, 'error': f'Array參數解析失敗: {str(e)}'}
-    
-    def _parse_cell_address_debug(self, cell_address):
-        """解析儲存格地址為列號和行號"""
-        match = re.match(r'([A-Z]+)(\d+)', cell_address.upper())
-        if not match:
-            raise ValueError(f"Invalid cell address: {cell_address}")
-        
-        col_letters = match.group(1)
-        row_num = int(match.group(2))
-        
-        col_num = 0
-        for char in col_letters:
-            col_num = col_num * 26 + (ord(char) - ord('A') + 1)
-        
-        return col_num, row_num
-
-    # === 完整的 explode_dependencies 方法 ===
     def explode_dependencies(self, workbook_path, sheet_name, cell_address, current_depth=0, root_workbook_path=None):
-        """遞歸展開公式依賴鏈 - 超安全版本 + INDEX支援 (完整版本)"""
+        """遞歸展開公式依賴鏈 - 超安全版本"""
         # 更新進度
         if current_depth == 0:
             self.progress_callback.update_progress("正在初始化依賴關係分析...")
@@ -890,11 +586,6 @@ class EnhancedDependencyExploder:
         self.visited_cells.add(cell_id)
         
         try:
-            # 檢查是否為範圍引用，如果是則跳過openpyxl讀取
-            if ':' in cell_address:
-                self.progress_callback.update_progress(f"檢測到範圍引用，跳過讀取: {current_ref}")
-                return self._create_error_node(workbook_path, sheet_name, cell_address, current_depth, root_workbook_path, "範圍引用不支持直接讀取")
-            
             # 讀取儲存格內容
             self.progress_callback.update_progress(f"正在讀取儲存格內容: {current_ref}")
             cell_info = read_cell_with_resolved_references(workbook_path, sheet_name, cell_address)
@@ -903,17 +594,15 @@ class EnhancedDependencyExploder:
                 self.progress_callback.update_progress(f"錯誤：無法讀取 {current_ref} - {cell_info['error']}")
                 return self._create_error_node(workbook_path, sheet_name, cell_address, current_depth, root_workbook_path, cell_info['error'])
             
-            # 處理公式清理和動態函數解析
+            # 處理公式清理和INDIRECT解析
             original_formula = cell_info.get('formula')
             fixed_formula = None
             resolved_formula = None
             indirect_info = None
-            index_info = None
             
             if original_formula:
                 self.progress_callback.update_progress(f"正在處理公式: {current_ref}")
                 fixed_formula = self._clean_formula(original_formula)
-                resolved_formula = fixed_formula  # 默認等於fixed_formula
                 
                 # INDIRECT 處理
                 if 'INDIRECT' in fixed_formula.upper():
@@ -956,54 +645,9 @@ class EnhancedDependencyExploder:
                             'internal_references': []
                         }
                         self.progress_callback.update_progress(f"INDIRECT解析異常: {str(e)}")
-                
-                # INDEX 處理
-                if 'INDEX(' in fixed_formula.upper():
-                    self.progress_callback.update_progress(f"正在解析INDEX函數: {current_ref}")
-                    try:
-                        index_result = self._resolve_index_with_excel_corrected_simple(
-                            resolved_formula, workbook_path, sheet_name, cell_address
-                        )
-                        if index_result and index_result['success']:
-                            resolved_formula = index_result['resolved_formula']
-                            index_info = {
-                                'has_index': True,
-                                'success': True,
-                                'resolved_formula': resolved_formula,
-                                'details': index_result,
-                                'internal_references': index_result.get('internal_references', [])
-                            }
-                            self.progress_callback.update_progress(f"INDEX解析完成，resolved: {resolved_formula}")
-                            
-                            # 記錄INDEX解析日誌
-                            self.index_resolution_log.append({
-                                'cell': f"{sheet_name}!{cell_address}",
-                                'original': original_formula,
-                                'resolved': resolved_formula,
-                                'details': index_result
-                            })
-                        else:
-                            index_info = {
-                                'has_index': True,
-                                'success': False,
-                                'error': index_result.get('error', 'Unknown error'),
-                                'internal_references': []
-                            }
-                            self.progress_callback.update_progress(f"INDEX解析失敗: {index_info['error']}")
-                    except Exception as e:
-                        index_info = {
-                            'has_index': True,
-                            'success': False,
-                            'error': str(e),
-                            'internal_references': []
-                        }
-                        self.progress_callback.update_progress(f"INDEX解析異常: {str(e)}")
 
             # 創建節點
-            node = self._create_node_with_dynamic_functions(
-                workbook_path, sheet_name, cell_address, current_depth, root_workbook_path, 
-                cell_info, fixed_formula, resolved_formula, indirect_info, index_info
-            )
+            node = self._create_node(workbook_path, sheet_name, cell_address, current_depth, root_workbook_path, cell_info, fixed_formula, resolved_formula, indirect_info)
             
             # 如果是公式，解析依賴關係
             if cell_info.get('cell_type') == 'formula' and cell_info.get('formula'):
@@ -1029,27 +673,6 @@ class EnhancedDependencyExploder:
                             node['children'].append(child_node)
                         except Exception as e:
                             self.progress_callback.update_progress(f"錯誤：處理 INDIRECT 內部引用失敗 {ref_display} - {str(e)}")
-                
-                # 處理 INDEX 內部的引用
-                if index_info and index_info.get('internal_references'):
-                    self.progress_callback.update_progress(f"找到 {len(index_info['internal_references'])} 個 INDEX 內部引用，正在分析...")
-                    
-                    for i, internal_ref in enumerate(index_info['internal_references'], 1):
-                        try:
-                            ref_display = f"{os.path.basename(internal_ref['workbook_path'])}!{internal_ref['sheet_name']}!{internal_ref['cell_address']}"
-                            self.progress_callback.update_progress(f"正在處理 INDEX 內部引用 {i}/{len(index_info['internal_references'])}: {ref_display}")
-                            
-                            child_node = self.explode_dependencies(
-                                internal_ref['workbook_path'],
-                                internal_ref['sheet_name'],
-                                internal_ref['cell_address'],
-                                current_depth + 1,
-                                root_workbook_path or workbook_path
-                            )
-                            child_node['from_index_internal'] = True
-                            node['children'].append(child_node)
-                        except Exception as e:
-                            self.progress_callback.update_progress(f"錯誤：處理 INDEX 內部引用失敗 {ref_display} - {str(e)}")
                 
                 # 處理範圍地址
                 formula_for_ranges = resolved_formula if resolved_formula else cell_info['formula']
@@ -1082,11 +705,6 @@ class EnhancedDependencyExploder:
                     
                     for i, ref in enumerate(references, 1):
                         try:
-                            # 檢查是否為範圍引用，如果是則跳過直接讀取
-                            if ':' in ref['cell_address']:
-                                self.progress_callback.update_progress(f"跳過範圍引用: {ref['cell_address']}")
-                                continue
-                                
                             ref_display = f"{os.path.basename(ref['workbook_path'])}!{ref['sheet_name']}!{ref['cell_address']}"
                             self.progress_callback.update_progress(f"正在處理引用 {i}/{len(references)}: {ref_display}")
                             
@@ -1097,11 +715,8 @@ class EnhancedDependencyExploder:
                                 current_depth + 1,
                                 root_workbook_path or workbook_path
                             )
-                            if resolved_formula != fixed_formula:
-                                if indirect_info and indirect_info.get('success'):
-                                    child_node['from_indirect_resolved'] = True
-                                if index_info and index_info.get('success'):
-                                    child_node['from_index_resolved'] = True
+                            if resolved_formula:
+                                child_node['from_indirect_resolved'] = True
                             node['children'].append(child_node)
                         except Exception as e:
                             self.progress_callback.update_progress(f"錯誤：處理引用失敗 {ref_display} - {str(e)}")
@@ -1119,9 +734,8 @@ class EnhancedDependencyExploder:
                 total_nodes = self._count_nodes(node)
                 max_depth = self._get_max_depth(node)
                 indirect_count = len([log for log in self.indirect_resolution_log if log.get('resolved')])
-                index_count = len([log for log in self.index_resolution_log if log.get('resolved')])
                 self.progress_callback.update_progress(
-                    f"分析完成！共處理 {self.processed_count} 次，生成 {total_nodes} 個節點，最大深度: {max_depth}，成功解析 {indirect_count} 個 INDIRECT，{index_count} 個 INDEX"
+                    f"分析完成！共處理 {self.processed_count} 次，生成 {total_nodes} 個節點，最大深度: {max_depth}，成功解析 {indirect_count} 個 INDIRECT"
                 )
                 
                 # 超安全清理（只清理我們的實例）
@@ -1145,72 +759,6 @@ class EnhancedDependencyExploder:
             self.progress_callback.update_progress(f"錯誤：處理 {current_ref} 時發生異常 - {str(e)}")
             return self._create_error_node(workbook_path, sheet_name, cell_address, current_depth, root_workbook_path, str(e))
 
-    def _create_node_with_dynamic_functions(self, workbook_path, sheet_name, cell_address, current_depth, root_workbook_path, cell_info, fixed_formula, resolved_formula=None, indirect_info=None, index_info=None):
-        """創建支持動態函數的節點"""
-        filename = os.path.basename(workbook_path)
-        dir_path = os.path.dirname(workbook_path)
-        
-        current_workbook_path = root_workbook_path if root_workbook_path else workbook_path
-        
-        if os.path.normpath(current_workbook_path) != os.path.normpath(workbook_path):
-            short_display_address = f"[{filename}]{sheet_name}!{cell_address}"
-            full_display_address = f"'{dir_path}\\[{filename}]{sheet_name}'!{cell_address}"
-            display_address = short_display_address
-        else:
-            short_display_address = f"[{filename}]{sheet_name}!{cell_address}"
-            full_display_address = f"'{dir_path}\\[{filename}]{sheet_name}'!{cell_address}"
-            display_address = short_display_address
-
-        node = {
-            'address': display_address,
-            'short_address': short_display_address,
-            'full_address': full_display_address,
-            'workbook_path': workbook_path,
-            'sheet_name': sheet_name,
-            'cell_address': cell_address,
-            'value': cell_info.get('display_value', 'N/A'),
-            'calculated_value': cell_info.get('calculated_value', 'N/A'),
-            'formula': fixed_formula,
-            'type': cell_info.get('cell_type', 'unknown'),
-            'children': [],
-            'depth': current_depth,
-            'error': None
-        }
-        
-        # 處理動態函數信息
-        has_dynamic_resolution = False
-        
-        # INDIRECT 信息
-        if indirect_info and indirect_info.get('has_indirect'):
-            node['has_indirect'] = True
-            if indirect_info.get('success'):
-                has_dynamic_resolution = True
-                node['indirect_details'] = indirect_info.get('details')
-                node['internal_references_count'] = len(indirect_info.get('internal_references', []))
-            else:
-                node['indirect_error'] = indirect_info.get('error')
-        else:
-            node['has_indirect'] = False
-        
-        # INDEX 信息
-        if index_info and index_info.get('has_index'):
-            node['has_index'] = True
-            if index_info.get('success'):
-                has_dynamic_resolution = True
-                node['index_details'] = index_info.get('details')
-                node['index_internal_references_count'] = len(index_info.get('internal_references', []))
-            else:
-                node['index_error'] = index_info.get('error')
-        else:
-            node['has_index'] = False
-        
-        # 設置resolved_formula
-        if has_dynamic_resolution and resolved_formula and resolved_formula != fixed_formula:
-            node['resolved_formula'] = resolved_formula
-            
-        return node
-
-    # === 其他輔助方法（保持原有實現）===
     def force_cleanup(self):
         """公開的超安全清理方法"""
         self.progress_callback.update_progress("[USER] 用戶觸發超安全清理...")
@@ -1625,6 +1173,48 @@ class EnhancedDependencyExploder:
         
         return fixed_formula
     
+    def _create_node(self, workbook_path, sheet_name, cell_address, current_depth, root_workbook_path, cell_info, fixed_formula, resolved_formula=None, indirect_info=None):
+        """創建標準節點"""
+        filename = os.path.basename(workbook_path)
+        dir_path = os.path.dirname(workbook_path)
+        
+        current_workbook_path = root_workbook_path if root_workbook_path else workbook_path
+        
+        if os.path.normpath(current_workbook_path) != os.path.normpath(workbook_path):
+            short_display_address = f"[{filename}]{sheet_name}!{cell_address}"
+            full_display_address = f"'{dir_path}\\[{filename}]{sheet_name}'!{cell_address}"
+            display_address = short_display_address
+        else:
+            short_display_address = f"[{filename}]{sheet_name}!{cell_address}"
+            full_display_address = f"'{dir_path}\\[{filename}]{sheet_name}'!{cell_address}"
+            display_address = short_display_address
+
+        node = {
+            'address': display_address,
+            'short_address': short_display_address,
+            'full_address': full_display_address,
+            'workbook_path': workbook_path,
+            'sheet_name': sheet_name,
+            'cell_address': cell_address,
+            'value': cell_info.get('display_value', 'N/A'),
+            'calculated_value': cell_info.get('calculated_value', 'N/A'),
+            'formula': fixed_formula,
+            'type': cell_info.get('cell_type', 'unknown'),
+            'children': [],
+            'depth': current_depth,
+            'error': None
+        }
+        
+        if indirect_info and indirect_info['has_indirect'] and indirect_info['success']:
+            node['has_indirect'] = True
+            node['resolved_formula'] = resolved_formula
+            node['indirect_details'] = indirect_info.get('details')
+            node['internal_references_count'] = len(indirect_info.get('internal_references', []))
+        else:
+            node['has_indirect'] = False
+            
+        return node
+    
     def _create_limit_node(self, workbook_path, sheet_name, cell_address, current_depth, root_workbook_path):
         """創建深度限制節點"""
         display_address = self._get_display_address(workbook_path, sheet_name, cell_address, current_depth, root_workbook_path)
@@ -1639,8 +1229,7 @@ class EnhancedDependencyExploder:
             'children': [],
             'depth': current_depth,
             'error': 'Maximum recursion depth reached',
-            'has_indirect': False,
-            'has_index': False
+            'has_indirect': False
         }
     
     def _create_circular_node(self, workbook_path, sheet_name, cell_address, current_depth, root_workbook_path):
@@ -1657,8 +1246,7 @@ class EnhancedDependencyExploder:
             'children': [],
             'depth': current_depth,
             'error': 'Circular reference detected',
-            'has_indirect': False,
-            'has_index': False
+            'has_indirect': False
         }
     
     def _create_error_node(self, workbook_path, sheet_name, cell_address, current_depth, root_workbook_path, error_msg):
@@ -1675,8 +1263,7 @@ class EnhancedDependencyExploder:
             'children': [],
             'depth': current_depth,
             'error': error_msg,
-            'has_indirect': False,
-            'has_index': False
+            'has_indirect': False
         }
     
     def _create_range_node(self, range_info, current_depth, root_workbook_path):
@@ -1718,7 +1305,6 @@ class EnhancedDependencyExploder:
             'depth': current_depth,
             'error': range_info.get('error'),
             'has_indirect': False,
-            'has_index': False,
             'range_info': {
                 'dimensions': {
                     'rows': rows,
@@ -1759,7 +1345,7 @@ class EnhancedDependencyExploder:
         return max(self._get_max_depth(child) for child in node['children'])
     
     def get_explosion_summary(self, root_node):
-        """獲取爆炸分析摘要 - 支援INDEX統計"""
+        """獲取爆炸分析摘要"""
         def count_nodes(node):
             count = 1
             for child in node.get('children', []):
@@ -1783,49 +1369,31 @@ class EnhancedDependencyExploder:
             
             return type_counts
         
-        def count_dynamic_function_nodes(node, dynamic_stats=None):
-            if dynamic_stats is None:
-                dynamic_stats = {
+        def count_indirect_nodes(node, indirect_stats=None):
+            if indirect_stats is None:
+                indirect_stats = {
                     'total_indirect_nodes': 0,
-                    'successful_indirect_resolutions': 0,
-                    'failed_indirect_resolutions': 0,
+                    'successful_resolutions': 0,
+                    'failed_resolutions': 0,
                     'internal_references': 0,
-                    'indirect_resolved_references': 0,
-                    'total_index_nodes': 0,
-                    'successful_index_resolutions': 0,
-                    'failed_index_resolutions': 0,
-                    'index_resolved_references': 0,
-                    'index_internal_references': 0
+                    'resolved_references': 0
                 }
             
-            # INDIRECT 統計
             if node.get('has_indirect'):
-                dynamic_stats['total_indirect_nodes'] += 1
+                indirect_stats['total_indirect_nodes'] += 1
                 if node.get('indirect_details'):
-                    dynamic_stats['successful_indirect_resolutions'] += 1
-                    dynamic_stats['internal_references'] += node.get('internal_references_count', 0)
+                    indirect_stats['successful_resolutions'] += 1
+                    indirect_stats['internal_references'] += node.get('internal_references_count', 0)
                 else:
-                    dynamic_stats['failed_indirect_resolutions'] += 1
+                    indirect_stats['failed_resolutions'] += 1
             
             if node.get('from_indirect_resolved'):
-                dynamic_stats['indirect_resolved_references'] += 1
-            
-            # INDEX 統計
-            if node.get('has_index'):
-                dynamic_stats['total_index_nodes'] += 1
-                if node.get('index_details'):
-                    dynamic_stats['successful_index_resolutions'] += 1
-                    dynamic_stats['index_internal_references'] += node.get('index_internal_references_count', 0)
-                else:
-                    dynamic_stats['failed_index_resolutions'] += 1
-            
-            if node.get('from_index_resolved'):
-                dynamic_stats['index_resolved_references'] += 1
+                indirect_stats['resolved_references'] += 1
             
             for child in node.get('children', []):
-                count_dynamic_function_nodes(child, dynamic_stats)
+                count_indirect_nodes(child, indirect_stats)
             
-            return dynamic_stats
+            return indirect_stats
         
         basic_stats = {
             'total_nodes': count_nodes(root_node),
@@ -1835,20 +1403,19 @@ class EnhancedDependencyExploder:
             'circular_ref_list': self.circular_refs
         }
         
-        dynamic_stats = count_dynamic_function_nodes(root_node)
+        indirect_stats = count_indirect_nodes(root_node)
         
         return {
             **basic_stats,
-            'dynamic_function_resolution': dynamic_stats,
+            'indirect_resolution': indirect_stats,
             'indirect_resolution_log': self.indirect_resolution_log,
-            'index_resolution_log': self.index_resolution_log,
             'our_instances_count': len(self.our_excel_instances)
         }
 
 
 def explode_cell_dependencies_with_progress(workbook_path, sheet_name, cell_address, max_depth=10, range_expand_threshold=5, progress_callback=None):
     """
-    便捷函數：爆炸分析指定儲存格的依賴關係 - 超安全版本 + INDEX支援 (完整版本)
+    便捷函數：爆炸分析指定儲存格的依賴關係 - 超安全版本（完全不會影響用戶Excel）
     """
     exploder = EnhancedDependencyExploder(max_depth=max_depth, range_expand_threshold=range_expand_threshold, progress_callback=progress_callback)
     
@@ -1889,11 +1456,11 @@ def explode_cell_dependencies_with_progress(workbook_path, sheet_name, cell_addr
 # 測試函數
 if __name__ == "__main__":
     test_workbook = r"C:\Users\user\Desktop\pytest\test.xlsx"
-    test_sheet = "Sheet1" 
+    test_sheet = "Sheet1"
     test_cell = "A1"
     
     try:
-        print("=== 超安全版本測試（完全不會影響用戶Excel）+ INDEX支援 (完整版本) ===")
+        print("=== 超安全版本測試（完全不會影響用戶Excel） ===")
         print(f"測試文件: {test_workbook}")
         print(f"測試位置: {test_sheet}!{test_cell}")
         print()
@@ -1910,14 +1477,7 @@ if __name__ == "__main__":
         print("\n摘要:")
         print(summary)
         
-        # 顯示INDEX解析統計
-        if 'index_resolution_log' in summary:
-            print(f"\n INDEX 解析統計:")
-            print(f"  - 成功解析: {summary['dynamic_function_resolution']['successful_index_resolutions']}")
-            print(f"  - 失敗解析: {summary['dynamic_function_resolution']['failed_index_resolutions']}")
-        
     except Exception as e:
         print(f"測試失敗: {e}")
         import traceback
         traceback.print_exc()
-                    

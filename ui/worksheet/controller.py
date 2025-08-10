@@ -9,6 +9,7 @@ and business logic for a single worksheet pane.
 import tkinter as tk
 from ui.worksheet.tab_manager import TabManager
 from ui.worksheet.view import WorksheetView
+from ui.summary_window import SummaryWindow
 
 class WorksheetController:
     """Manages the state and logic for a single worksheet pane."""

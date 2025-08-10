@@ -8,6 +8,7 @@ import win32process
 import win32con
 from core.formula_classifier import classify_formula_type
 from core.worksheet_tree import apply_filter
+import traceback
 
 def _get_formulas_from_excel(worksheet_com_obj, scan_range_com_obj, scan_mode, progress_update_callback):
     all_formulas_local = []

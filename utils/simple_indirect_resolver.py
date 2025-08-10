@@ -8,6 +8,7 @@ import re
 import os
 import openpyxl
 from urllib.parse import unquote
+import win32com.client as win32
 
 class SimpleIndirectResolver:
     """簡單的INDIRECT解析器 - 只處理INDIRECT函數替換"""

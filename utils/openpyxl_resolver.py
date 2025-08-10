@@ -7,6 +7,8 @@ Based on the provided ResolvedWorkbookView implementation
 import openpyxl
 import os
 import re
+from .safe_cache import get_safe_cached_workbook
+import traceback
 
 # 輔助函數：從工作簿中獲取外部連結映射
 def _get_external_link_map(workbook):
